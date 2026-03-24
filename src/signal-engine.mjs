@@ -109,12 +109,14 @@ function buildTradeIdea(playbook, asset) {
   const action = { ...playbook.action };
   action.symbol = action.symbol || renderSymbol(playbook.symbolTemplate, asset);
   action.clientOrderId = `t-${playbook.id.slice(0, 10)}-${Date.now().toString().slice(-8)}`;
+
   const amountSummary =
     action.side === "buy"
       ? `投入 ${action.amountQuote}`
       : action.amountBase === "ALL"
         ? "卖出全部可用仓位"
         : `卖出 ${action.amountBase}`;
+
   const actionLabel = action.side === "buy" ? "市价买入" : "市价卖出";
   return {
     ...action,
@@ -201,6 +203,7 @@ export function createSignalFromPayload(payload) {
   if (!text.trim()) {
     return null;
   }
+
   return {
     sourceType: payload.sourceType || "news",
     sourceName: payload.sourceName || "external-webhook",
@@ -215,6 +218,7 @@ export function evaluateSignal(baseSignal, playbooks, config, store) {
   const normalizedHash = hashText(normalized);
   const presentation = buildSignalPresentation(baseSignal);
   const duplicate = store.findRecentDuplicate(normalizedHash, config.dedupWindowSec);
+
   if (duplicate) {
     return {
       skipped: true,
@@ -234,17 +238,20 @@ export function evaluateSignal(baseSignal, playbooks, config, store) {
       analystChatIds: [],
       newsChatIds: [],
     },
+    feishu: {
+      analystRoutes: [],
+    },
     execution: {
       newsMode: "auto",
     },
   });
 
   let executionStatus = "notify_only";
-  let executionReason = "没有命中可执行策略，只做提醒";
+  let executionReason = "没有命中可执行策略，这条消息只做提醒";
 
   if (baseSignal.sourceType === "analyst" && !selectedPlaybook) {
     executionStatus = "pending_approval";
-    executionReason = "鍒嗘瀽甯堟柊娑堟伅榛樿鍏堝彂椋炰功锛岀瓑浣犳煡鐪嬪悗鍐冲畾鏄惁浜ゆ槗";
+    executionReason = "分析师新消息默认先发飞书，等你查看后再决定是否交易";
   } else if (selectedPlaybook && tradeIdea) {
     const notionalEstimate =
       Number.parseFloat(tradeIdea.amountQuote || "") ||
@@ -265,7 +272,7 @@ export function evaluateSignal(baseSignal, playbooks, config, store) {
       executionReason = "等待你手动确认";
     } else if (forceManualForNews) {
       executionStatus = "pending_approval";
-      executionReason = "新闻手动模式已开启";
+      executionReason = "新闻已切到手动确认模式";
     } else if (selectedPlaybook.autoExecute && score >= (selectedPlaybook.minScore || 0.8)) {
       executionStatus = config.autoExecutionEnabled ? "ready_for_execution" : "dry_run_ready";
       executionReason = config.autoExecutionEnabled
@@ -273,7 +280,7 @@ export function evaluateSignal(baseSignal, playbooks, config, store) {
         : "已命中自动交易条件，但全局自动执行开关未开启";
     } else {
       executionStatus = "notify_only";
-      executionReason = "命中策略，但当前配置为只提醒";
+      executionReason = "命中了策略，但当前配置为只提醒";
     }
   }
 

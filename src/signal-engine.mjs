@@ -15,12 +15,41 @@ function hashText(text) {
   return crypto.createHash("sha256").update(text).digest("hex");
 }
 
+export function buildAnalystPrivacyAlias(chatId) {
+  const suffix = String(chatId || "").replace(/\D/g, "").slice(-4);
+  return suffix ? `分析师专线 ${suffix}` : "分析师专线";
+}
+
+export function sanitizeAnalystText(text) {
+  return String(text || "")
+    .replace(/https?:\/\/\S+/gi, "[链接已隐藏]")
+    .replace(/\bt\.me\/\S+/gi, "[链接已隐藏]")
+    .replace(/@\w{3,}/g, "@***")
+    .replace(/\b(?:vx|wx|wechat|telegram|tg)\s*[:：]?\s*[\w.-]{3,}\b/gi, "[联系方式已隐藏]")
+    .replace(/(?:微信|电报|飞机|频道|社群|联系)\s*[:：]?\s*[@\w.-]{3,}/g, "[联系方式已隐藏]")
+    .replace(/\b1\d{10}\b/g, "[手机号已隐藏]");
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function buildSignalPresentation(baseSignal) {
+  if (baseSignal.sourceType !== "analyst") {
+    return {
+      displaySourceName: baseSignal.sourceName,
+      displayText: baseSignal.text,
+    };
+  }
+
+  return {
+    displaySourceName: buildAnalystPrivacyAlias(baseSignal.chatId),
+    displayText: sanitizeAnalystText(baseSignal.text),
+  };
 }
 
 function parseChatId(message) {
@@ -184,6 +213,7 @@ export function createSignalFromPayload(payload) {
 export function evaluateSignal(baseSignal, playbooks, config, store) {
   const normalized = normalizeText(baseSignal.text);
   const normalizedHash = hashText(normalized);
+  const presentation = buildSignalPresentation(baseSignal);
   const duplicate = store.findRecentDuplicate(normalizedHash, config.dedupWindowSec);
   if (duplicate) {
     return {
@@ -255,9 +285,11 @@ export function evaluateSignal(baseSignal, playbooks, config, store) {
       normalizedHash,
       sourceType: baseSignal.sourceType,
       sourceName: baseSignal.sourceName,
+      displaySourceName: presentation.displaySourceName,
       chatId: baseSignal.chatId,
       publishedAt: baseSignal.publishedAt,
       text: baseSignal.text,
+      displayText: presentation.displayText,
       score,
       matchedPlaybookIds: matched.map((playbook) => playbook.id),
       selectedPlaybookId: selectedPlaybook?.id || "",
@@ -273,6 +305,8 @@ export function evaluateSignal(baseSignal, playbooks, config, store) {
 }
 
 export function renderSignalReviewPage(signal, token) {
+  const sourceLabel = signal.displaySourceName || signal.sourceName;
+  const displayText = signal.displayText || signal.text;
   const tradeBlock = signal.tradeIdea
     ? `<p><strong>交易建议:</strong> ${escapeHtml(signal.tradeIdea.summary)}</p>`
     : "<p><strong>交易建议:</strong> 无</p>";
@@ -298,11 +332,11 @@ export function renderSignalReviewPage(signal, token) {
   <body>
     <div class="card">
       <h1>${escapeHtml(title)}</h1>
-      <p><strong>来源:</strong> ${escapeHtml(signal.sourceName)}</p>
+      <p><strong>来源:</strong> ${escapeHtml(sourceLabel)}</p>
       <p><strong>评分:</strong> ${signal.score.toFixed(2)}</p>
       <p><strong>命中策略:</strong> ${escapeHtml(signal.matchedPlaybookIds.join(", ") || "无")}</p>
       ${tradeBlock}
-      <pre>${escapeHtml(signal.text)}</pre>
+      <pre>${escapeHtml(displayText)}</pre>
       <div class="actions">
         <form method="post" action="/signals/${signal.id}/approve?token=${encodeURIComponent(token)}">
           <button class="approve" type="submit">确认跟单</button>

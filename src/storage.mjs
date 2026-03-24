@@ -5,6 +5,28 @@ function normalizeIdList(value) {
   return [...new Set((value || []).map((item) => String(item).trim()).filter(Boolean))];
 }
 
+function normalizeAnalystRoutes(value) {
+  const routes = Array.isArray(value) ? value : [];
+  const normalized = [];
+  const seen = new Set();
+
+  for (const item of routes) {
+    const chatId = String(item?.chatId || "").trim();
+    if (!chatId || seen.has(chatId)) {
+      continue;
+    }
+
+    normalized.push({
+      chatId,
+      webhookUrl: String(item?.webhookUrl || "").trim(),
+      displayName: String(item?.displayName || "").trim(),
+    });
+    seen.add(chatId);
+  }
+
+  return normalized;
+}
+
 export class JsonStore {
   constructor(dataDir) {
     this.filePath = path.join(dataDir, "state.json");
@@ -43,6 +65,9 @@ export class JsonStore {
         analystChatIds: normalizeIdList(defaults.telegram?.analystChatIds),
         newsChatIds: normalizeIdList(defaults.telegram?.newsChatIds),
       },
+      feishu: {
+        analystRoutes: normalizeAnalystRoutes(defaults.feishu?.analystRoutes),
+      },
       execution: {
         newsMode: defaults.execution?.newsMode === "manual" ? "manual" : "auto",
       },
@@ -76,6 +101,9 @@ export class JsonStore {
         analystChatIds: normalizeIdList(savedTelegram.analystChatIds),
         newsChatIds: normalizeIdList(savedTelegram.newsChatIds),
       },
+      feishu: {
+        analystRoutes: normalizeAnalystRoutes(this.state.runtimeSettings?.feishu?.analystRoutes),
+      },
       execution: {
         newsMode:
           this.state.runtimeSettings?.execution?.newsMode === "manual" ? "manual" : "auto",
@@ -86,6 +114,7 @@ export class JsonStore {
   saveRuntimeSettings(nextSettings, defaults = {}) {
     const current = this.getRuntimeSettings(defaults);
     const nextTelegram = nextSettings?.telegram || {};
+    const nextFeishu = nextSettings?.feishu || {};
 
     this.state.runtimeSettings = {
       telegram: {
@@ -96,6 +125,11 @@ export class JsonStore {
           nextTelegram.analystChatIds ?? current.telegram.analystChatIds,
         ),
         newsChatIds: normalizeIdList(nextTelegram.newsChatIds ?? current.telegram.newsChatIds),
+      },
+      feishu: {
+        analystRoutes: normalizeAnalystRoutes(
+          nextFeishu.analystRoutes ?? current.feishu.analystRoutes,
+        ),
       },
       execution: {
         newsMode: nextSettings?.execution?.newsMode === "manual" ? "manual" : "auto",

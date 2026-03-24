@@ -6,6 +6,7 @@ import { config, ensureRuntimeDirs, loadPlaybooks } from "./config.mjs";
 import { FeishuNotifier } from "./feishu.mjs";
 import { GateSpotClient } from "./gate-api.mjs";
 import {
+  buildAnalystPrivacyAlias,
   createSignalFromPayload,
   createSignalFromTelegramMessage,
   evaluateSignal,
@@ -49,6 +50,9 @@ const defaultRuntimeSettings = {
     analystChatIds: config.telegram.analystChatIds,
     newsChatIds: config.telegram.newsChatIds,
   },
+  feishu: {
+    analystRoutes: [],
+  },
   execution: {
     newsMode: "auto",
   },
@@ -65,6 +69,36 @@ function getEffectiveTelegramConfig() {
     allowedChatIds: runtimeSettings.telegram.allowedChatIds,
     analystChatIds: runtimeSettings.telegram.analystChatIds,
     newsChatIds: runtimeSettings.telegram.newsChatIds,
+  };
+}
+
+function getConfiguredChatLabel(chatId) {
+  return configuredChatLabels[String(chatId || "")] || "";
+}
+
+function getAnalystRoute(chatId) {
+  const runtimeSettings = getRuntimeSettings();
+  const routes = runtimeSettings.feishu?.analystRoutes || [];
+  return routes.find((route) => route.chatId === String(chatId || "")) || null;
+}
+
+function getSignalDeliveryOptions(signal) {
+  if (signal.sourceType !== "analyst") {
+    return {
+      webhookUrl: "",
+      displayName: signal.sourceName,
+      routeLabel: signal.sourceName,
+    };
+  }
+
+  const route = getAnalystRoute(signal.chatId);
+  const routeLabel =
+    getConfiguredChatLabel(signal.chatId) || signal.sourceName || signal.chatId || "分析师群";
+
+  return {
+    webhookUrl: route?.webhookUrl || "",
+    displayName: route?.displayName || buildAnalystPrivacyAlias(signal.chatId),
+    routeLabel,
   };
 }
 
@@ -328,13 +362,13 @@ function renderPendingQueuePage(pendingSignals) {
       return `<section class="card">
         <div class="meta">
           <span class="pill">${escapeHtml(signal.sourceType === "analyst" ? "分析师策略" : "新闻消息")}</span>
-          <span>${escapeHtml(signal.sourceName)}</span>
+          <span>${escapeHtml(signal.displaySourceName || signal.sourceName)}</span>
           <span>${escapeHtml(signal.createdAt)}</span>
         </div>
         <h2>${escapeHtml(tradeSummary)}</h2>
         <p class="reason">${escapeHtml(signal.executionReason || "等待处理")}</p>
         <p><strong>命中策略：</strong>${escapeHtml(signal.matchedPlaybookIds.join(", ") || "无")}</p>
-        <pre>${escapeHtml(signal.text)}</pre>
+        <pre>${escapeHtml(signal.displayText || signal.text)}</pre>
         <div class="actions">
           <form method="post" action="/signals/${signal.id}/approve?token=${encodeURIComponent(token)}">
             <button class="approve" type="submit">确认跟单</button>
@@ -384,10 +418,12 @@ function renderPendingQueuePage(pendingSignals) {
 
 async function notifySignal(signal) {
   const approvalToken = signApprovalToken(signal.id);
-  await feishuNotifier.sendSignalCard(signal, approvalToken);
+  const deliveryOptions = getSignalDeliveryOptions(signal);
+  await feishuNotifier.sendSignalCard(signal, approvalToken, deliveryOptions);
 }
 
 async function executeSignal(signal, trigger) {
+  const deliveryOptions = getSignalDeliveryOptions(signal);
   if (!signal.tradeIdea) {
     return {
       status: "skipped",
@@ -418,7 +454,7 @@ async function executeSignal(signal, trigger) {
         Number.parseFloat(signal.tradeIdea.amountBase || "") ||
         0,
     });
-    await feishuNotifier.sendExecutionResult(signal, executionResult);
+    await feishuNotifier.sendExecutionResult(signal, executionResult, deliveryOptions);
     return executionResult;
   } catch (error) {
     const executionResult = {
@@ -430,7 +466,7 @@ async function executeSignal(signal, trigger) {
     signal.executionStatus = "execution_failed";
     signal.executionResult = executionResult;
     store.upsertSignal(signal);
-    await feishuNotifier.sendExecutionResult(signal, executionResult);
+    await feishuNotifier.sendExecutionResult(signal, executionResult, deliveryOptions);
     return executionResult;
   }
 }
@@ -718,6 +754,7 @@ const server = http.createServer(async (request, response) => {
           signalCount: store.listSignals().length,
           dryRun: config.dryRun,
           autoExecutionEnabled: config.autoExecutionEnabled,
+          defaultFeishuConfigured: Boolean(config.feishu.webhookUrl),
           telegramSourceMode: config.telegram.sourceMode,
           telegramRuntimeSummary: getTelegramRuntimeSummary(),
           port: config.port,

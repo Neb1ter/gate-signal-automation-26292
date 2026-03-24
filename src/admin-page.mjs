@@ -17,6 +17,7 @@ export function renderAdminPage({
   signalCount,
   dryRun,
   autoExecutionEnabled,
+  defaultFeishuConfigured,
   telegramSourceMode,
   telegramRuntimeSummary,
   port,
@@ -29,6 +30,7 @@ export function renderAdminPage({
     signalCount,
     dryRun,
     autoExecutionEnabled,
+    defaultFeishuConfigured,
     telegramSourceMode,
     telegramRuntimeSummary,
     port,
@@ -68,7 +70,7 @@ export function renderAdminPage({
         font: 14px/1.6 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       }
       .shell {
-        max-width: 1180px;
+        max-width: 1280px;
         margin: 0 auto;
         padding: 28px 18px 40px;
       }
@@ -83,7 +85,7 @@ export function renderAdminPage({
       .hero-copy p {
         margin-top: 8px;
         color: var(--muted);
-        max-width: 820px;
+        max-width: 860px;
       }
       .actions {
         display: flex;
@@ -112,7 +114,7 @@ export function renderAdminPage({
       }
       .grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         gap: 14px;
         margin-bottom: 20px;
       }
@@ -142,7 +144,7 @@ export function renderAdminPage({
       }
       .panel-grid {
         display: grid;
-        grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+        grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
         gap: 18px;
       }
       .stack {
@@ -171,7 +173,9 @@ export function renderAdminPage({
         margin-top: 6px;
       }
       textarea,
-      select {
+      select,
+      input[type="text"],
+      input[type="url"] {
         width: 100%;
         border: 1px solid var(--line);
         border-radius: 12px;
@@ -225,7 +229,36 @@ export function renderAdminPage({
         font-weight: 600;
         margin-top: 10px;
       }
-      @media (max-width: 980px) {
+      .route-grid {
+        display: grid;
+        gap: 12px;
+        margin-top: 16px;
+      }
+      .route-card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 14px;
+        background: #fbfcff;
+      }
+      .route-card h3 {
+        font-size: 15px;
+      }
+      .route-card p {
+        margin-top: 4px;
+        color: var(--muted);
+      }
+      .route-fields {
+        display: grid;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .hint-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+        color: var(--muted);
+      }
+      @media (max-width: 1080px) {
         .grid,
         .panel-grid {
           grid-template-columns: 1fr;
@@ -238,10 +271,11 @@ export function renderAdminPage({
       <div class="hero">
         <div class="hero-copy">
           <h1>交易信号后台</h1>
-          <p>这里可以直接管理 Telegram 监听群、分析师群和新闻群，还能切换“新闻消息自动交易”或“新闻消息手动确认”。保存后会立刻生效，不需要改代码。</p>
-          <div class="badge">分析师策略始终先发飞书，只有你确认后才会跟单</div>
+          <p>这里可以管理 Telegram 监听群、新闻自动交易模式，以及“每个分析师群发到哪个飞书群”。分析师消息会优先做匿名化转发，你可以直接在飞书里看策略，再决定是否跟单。</p>
+          <div class="badge">分析师消息：默认全部转发到飞书，屏蔽链接 / 联系方式 / 用户名</div>
         </div>
         <div class="actions">
+          <a href="/pending" class="button-link button-secondary">查看待决策</a>
           <a href="/logout" class="button-link button-secondary">退出登录</a>
           <button id="reload" class="button-secondary" type="button">刷新</button>
           <button id="save" class="button-primary" type="button">保存设置</button>
@@ -252,17 +286,17 @@ export function renderAdminPage({
         <div class="card">
           <div class="metric-label">已存信号</div>
           <div class="metric-value">${escapeHtml(signalCount)}</div>
-          <div class="metric-hint">保存在运行时状态文件中</div>
+          <div class="metric-hint">当前数据库里保存的信号数量</div>
         </div>
         <div class="card">
           <div class="metric-label">下单模式</div>
           <div class="metric-value">${dryRun ? "模拟" : "真实"}</div>
-          <div class="metric-hint">${dryRun ? "当前不会真实下单" : "当前允许真实交易"}</div>
+          <div class="metric-hint">${dryRun ? "现在不会真实下单" : "现在允许真实交易"}</div>
         </div>
         <div class="card">
           <div class="metric-label">自动执行总开关</div>
           <div class="metric-value">${autoExecutionEnabled ? "开启" : "关闭"}</div>
-          <div class="metric-hint">命中自动策略后是否允许直接执行</div>
+          <div class="metric-hint">只影响新闻自动单，不影响分析师审批流</div>
         </div>
         <div class="card">
           <div class="metric-label">当前入口</div>
@@ -281,8 +315,8 @@ export function renderAdminPage({
       <div class="panel-grid">
         <div class="stack">
           <div class="card">
-            <div class="section-title">交易模式</div>
-            <p class="section-copy">分析师策略默认永远走飞书确认。这里控制的是“新闻消息”收到后，是自动交易还是先手动确认。</p>
+            <div class="section-title">新闻交易模式</div>
+            <p class="section-copy">分析师消息始终先发飞书，由你手动决策。这里控制的是新闻消息命中策略后，是自动交易还是先等你确认。</p>
             <div class="field">
               <label for="newsMode">新闻交易模式</label>
               <select id="newsMode">
@@ -294,13 +328,13 @@ export function renderAdminPage({
           </div>
 
           <div class="card">
-            <div class="section-title">手动填写群聊 ID</div>
-            <p class="section-copy">如果某个群还没被自动识别，可以直接把 chat id 填在这里，多个 ID 用英文逗号分隔。</p>
+            <div class="section-title">手动填写 Telegram 群 ID</div>
+            <p class="section-copy">如果某个群还没被自动识别，可以直接在这里填入 chat id。多个 ID 用英文逗号分隔。</p>
 
             <div class="field">
-              <label for="allowedCsv">允许监听的群聊 ID</label>
+              <label for="allowedCsv">允许监听的群 ID</label>
               <textarea id="allowedCsv"></textarea>
-              <small>只有这里的群才会被处理。留空则默认允许所有已识别群聊。</small>
+              <small>只有这里的群才会被处理。留空则等于允许所有已分类群。</small>
             </div>
 
             <div class="field">
@@ -317,23 +351,26 @@ export function renderAdminPage({
           </div>
 
           <div class="card">
-            <div class="section-title">如何新增监听群</div>
-            <p class="section-copy">${
-              telegramSourceMode === "user"
-                ? "当前是 Telegram 个人号监听模式。只要你的 Telegram 账号本身能看到这个群，新消息就能被系统捕捉到，不再依赖 bot 管理员权限。"
-                : "当前是 Telegram Bot 监听模式。1. 把 Telegram bot 拉进目标群或频道。2. 让群里出现一条新消息。3. 回来点刷新，就能在右侧列表里勾选分类。"
-            }</p>
-            <p class="inline-help">${
-              telegramSourceMode === "user"
-                ? "如果你监控的是别人的群、频道或讨论组，推荐继续使用个人号监听。后续只需要维护群 ID 分类，不需要再给 bot 开管理员。"
-                : "如果右侧一直是空的，通常有两种情况：bot 还没在这个群里真正收到过消息，或者 bot 没有读消息权限。现在你手工填过的群也会先显示出来，不用等第一条消息。"
-            }</p>
+            <div class="section-title">分析师分群转发</div>
+            <p class="section-copy">你可以把不同的 Telegram 分析师群，分别发到不同的飞书群。每个飞书群都需要自己的自定义机器人 webhook。</p>
+            <div class="badge">${defaultFeishuConfigured ? "已存在默认飞书群：未单独配置时会先发到默认群" : "当前没有默认飞书群：请至少给分析师群配置一个 webhook"}</div>
+            <div id="analystRoutesWrap" class="route-grid"></div>
+          </div>
+
+          <div class="card">
+            <div class="section-title">使用说明</div>
+            <div class="hint-list">
+              <div>1. 发现表里勾选哪些群属于“分析师群”或“新闻群”。</div>
+              <div>2. 在“分析师分群转发”里，为需要单独接收的分析师群填入飞书 webhook。</div>
+              <div>3. 分析师正文会尽量原样转发，但会自动隐藏链接、联系方式、用户名，降低版权和引流风险。</div>
+              <div>4. 现在是 ${telegramSourceMode === "user" ? "Telegram 个人号" : "Telegram Bot"} 监听，只要这边能收到群消息，飞书就能继续推送。</div>
+            </div>
           </div>
         </div>
 
         <div class="card">
           <div class="section-title">已发现的 Telegram 群聊</div>
-          <p class="section-copy">这里会同时显示两类群：一类是 bot 真正见过消息的群；另一类是你手工配置但 bot 还没收到首条消息的群。</p>
+          <p class="section-copy">这里会把系统已看过的群、以及你手动配置但还没收到过首条消息的群一起显示出来。你不用再自己记 ID，只要看群名即可。</p>
           <div id="chatTableWrap"></div>
         </div>
       </div>
@@ -347,6 +384,15 @@ export function renderAdminPage({
         allowed: new Set((bootstrap.runtimeSettings.telegram.allowedChatIds || []).map(String)),
         news: new Set((bootstrap.runtimeSettings.telegram.newsChatIds || []).map(String)),
         analyst: new Set((bootstrap.runtimeSettings.telegram.analystChatIds || []).map(String)),
+        analystRoutes: new Map(
+          (bootstrap.runtimeSettings.feishu?.analystRoutes || []).map((route) => [
+            String(route.chatId),
+            {
+              webhookUrl: String(route.webhookUrl || ""),
+              displayName: String(route.displayName || ""),
+            },
+          ]),
+        ),
         newsMode: bootstrap.runtimeSettings.execution?.newsMode === "manual" ? "manual" : "auto",
       };
 
@@ -356,6 +402,7 @@ export function renderAdminPage({
       const newsMode = document.getElementById("newsMode");
       const statusLine = document.getElementById("statusLine");
       const chatTableWrap = document.getElementById("chatTableWrap");
+      const analystRoutesWrap = document.getElementById("analystRoutesWrap");
 
       function escapeClientHtml(value) {
         return String(value ?? "")
@@ -376,44 +423,43 @@ export function renderAdminPage({
         return [...set].filter((id) => !discoveredIds.has(id)).join(", ");
       }
 
-      function syncManualFields() {
-        allowedCsv.value = nonDiscoveredFromSet(state.allowed);
-        newsCsv.value = nonDiscoveredFromSet(state.news);
-        analystCsv.value = nonDiscoveredFromSet(state.analyst);
-        newsMode.value = state.newsMode;
+      function getKnownChatMap() {
+        const map = new Map();
+        for (const chat of bootstrap.knownChats) {
+          const id = String(chat.id);
+          map.set(id, {
+            ...chat,
+            title: bootstrap.configuredChatLabels?.[id] || chat.title || id,
+            isConfiguredOnly: false,
+          });
+        }
+        return map;
       }
 
-      function checked(set, id) {
-        return set.has(String(id)) ? "checked" : "";
+      function getConfiguredOnlyChat(id) {
+        return {
+          id,
+          title: bootstrap.configuredChatLabels?.[id] || "手动配置的群聊",
+          username: "",
+          type: "configured",
+          lastSeenAt: "",
+          lastText: "系统还没在这个群里收到首条新消息",
+          isConfiguredOnly: true,
+        };
       }
 
       function getVisibleChats() {
-        const knownMap = new Map(
-          bootstrap.knownChats.map((chat) => {
-            const id = String(chat.id);
-            return [
-              id,
-              {
-                ...chat,
-                title: bootstrap.configuredChatLabels?.[id] || chat.title,
-                isConfiguredOnly: false,
-              },
-            ];
-          }),
-        );
+        const knownMap = getKnownChatMap();
+        const configuredIds = new Set([
+          ...state.allowed,
+          ...state.news,
+          ...state.analyst,
+          ...state.analystRoutes.keys(),
+        ]);
 
-        const configuredIds = new Set([...state.allowed, ...state.news, ...state.analyst]);
         for (const id of configuredIds) {
           if (!knownMap.has(id)) {
-            knownMap.set(id, {
-              id,
-              title: bootstrap.configuredChatLabels?.[id] || "手动配置的群聊",
-              username: "",
-              type: "configured",
-              lastSeenAt: "",
-              lastText: "bot 还没有在这个群里收到过新消息",
-              isConfiguredOnly: true,
-            });
+            knownMap.set(id, getConfiguredOnlyChat(id));
           }
         }
 
@@ -427,10 +473,26 @@ export function renderAdminPage({
         });
       }
 
+      function getChatTitle(id) {
+        const visible = getVisibleChats().find((chat) => String(chat.id) === String(id));
+        return visible?.title || bootstrap.configuredChatLabels?.[String(id)] || String(id);
+      }
+
+      function syncManualFields() {
+        allowedCsv.value = nonDiscoveredFromSet(state.allowed);
+        newsCsv.value = nonDiscoveredFromSet(state.news);
+        analystCsv.value = nonDiscoveredFromSet(state.analyst);
+        newsMode.value = state.newsMode;
+      }
+
+      function checked(set, id) {
+        return set.has(String(id)) ? "checked" : "";
+      }
+
       function renderChats() {
         const chats = getVisibleChats();
         if (!chats.length) {
-          chatTableWrap.innerHTML = '<p class="empty">目前还没有自动识别到任何 Telegram 群，也没有手动配置的群 ID。你可以先在左侧填入群 ID，或者先让 bot 收到一条新消息。</p>';
+          chatTableWrap.innerHTML = '<p class="empty">目前还没有自动识别到任何 Telegram 群，也没有手动配置的群 ID。你可以先在左侧填入群 ID，或者先让系统收到一条新消息。</p>';
           return;
         }
 
@@ -475,6 +537,50 @@ export function renderAdminPage({
         \`;
       }
 
+      function renderAnalystRoutes() {
+        const analystIds = [...state.analyst].sort((a, b) => getChatTitle(a).localeCompare(getChatTitle(b), "zh-CN"));
+        if (!analystIds.length) {
+          analystRoutesWrap.innerHTML = '<div class="empty">先在右侧把某个 Telegram 群勾成“分析师群”，这里才会出现对应的飞书路由配置。</div>';
+          return;
+        }
+
+        analystRoutesWrap.innerHTML = analystIds
+          .map((chatId) => {
+            const route = state.analystRoutes.get(chatId) || { webhookUrl: "", displayName: "" };
+            return \`
+              <section class="route-card">
+                <h3>\${escapeClientHtml(getChatTitle(chatId))}</h3>
+                <p>Telegram 群 ID：\${escapeClientHtml(chatId)}</p>
+                <div class="route-fields">
+                  <div>
+                    <label>飞书群显示名</label>
+                    <input
+                      type="text"
+                      data-route-id="\${escapeClientHtml(chatId)}"
+                      data-route-field="displayName"
+                      value="\${escapeClientHtml(route.displayName)}"
+                      placeholder="例如：三马哥策略专线 / 分析师专线 6001"
+                    />
+                    <small>这里建议填你自己的群名或匿名名。飞书消息里会显示这个名字，而不是 Telegram 原始作者身份。</small>
+                  </div>
+                  <div>
+                    <label>飞书机器人 Webhook</label>
+                    <input
+                      type="url"
+                      data-route-id="\${escapeClientHtml(chatId)}"
+                      data-route-field="webhookUrl"
+                      value="\${escapeClientHtml(route.webhookUrl)}"
+                      placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+                    />
+                    <small>留空时会回落到默认飞书群；填了以后，这个分析师群就会单独发到你指定的飞书群。</small>
+                  </div>
+                </div>
+              </section>
+            \`;
+          })
+          .join("");
+      }
+
       function refreshStatus(message, isError) {
         statusLine.textContent = message || "";
         statusLine.style.color = isError ? "#9a5b00" : "#157347";
@@ -493,6 +599,18 @@ export function renderAdminPage({
         }
         syncManualFields();
         renderChats();
+        renderAnalystRoutes();
+      });
+
+      document.addEventListener("input", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        const routeId = target.dataset.routeId;
+        const routeField = target.dataset.routeField;
+        if (!routeId || !routeField) return;
+        const current = state.analystRoutes.get(routeId) || { webhookUrl: "", displayName: "" };
+        current[routeField] = target.value;
+        state.analystRoutes.set(routeId, current);
       });
 
       newsMode.addEventListener("change", () => {
@@ -509,6 +627,18 @@ export function renderAdminPage({
             allowedChatIds: [...new Set([...state.allowed, ...parseCsv(allowedCsv.value)])],
             newsChatIds: [...new Set([...state.news, ...parseCsv(newsCsv.value)])],
             analystChatIds: [...new Set([...state.analyst, ...parseCsv(analystCsv.value)])],
+          },
+          feishu: {
+            analystRoutes: [...state.analyst]
+              .map((chatId) => {
+                const route = state.analystRoutes.get(chatId) || {};
+                return {
+                  chatId,
+                  displayName: String(route.displayName || "").trim(),
+                  webhookUrl: String(route.webhookUrl || "").trim(),
+                };
+              })
+              .filter((route) => route.displayName || route.webhookUrl),
           },
           execution: {
             newsMode: state.newsMode,
@@ -534,10 +664,21 @@ export function renderAdminPage({
           state.allowed = new Set((saved.telegram.allowedChatIds || []).map(String));
           state.news = new Set((saved.telegram.newsChatIds || []).map(String));
           state.analyst = new Set((saved.telegram.analystChatIds || []).map(String));
+          state.analystRoutes = new Map(
+            (saved.feishu?.analystRoutes || []).map((route) => [
+              String(route.chatId),
+              {
+                webhookUrl: String(route.webhookUrl || ""),
+                displayName: String(route.displayName || ""),
+              },
+            ]),
+          );
           state.newsMode = saved.execution?.newsMode === "manual" ? "manual" : "auto";
+
           syncManualFields();
           renderChats();
-          refreshStatus("已保存，新的 Telegram 消息会立刻按新设置处理。", false);
+          renderAnalystRoutes();
+          refreshStatus("已保存。新的 Telegram 消息会立刻按新路由和新模式处理。", false);
         } catch (error) {
           refreshStatus("保存失败：" + error.message, true);
         }
@@ -545,6 +686,7 @@ export function renderAdminPage({
 
       syncManualFields();
       renderChats();
+      renderAnalystRoutes();
     </script>
   </body>
 </html>`;

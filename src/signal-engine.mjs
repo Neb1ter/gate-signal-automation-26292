@@ -212,7 +212,10 @@ export function evaluateSignal(baseSignal, playbooks, config, store) {
   let executionStatus = "notify_only";
   let executionReason = "没有命中可执行策略，只做提醒";
 
-  if (selectedPlaybook && tradeIdea) {
+  if (baseSignal.sourceType === "analyst" && !selectedPlaybook) {
+    executionStatus = "pending_approval";
+    executionReason = "鍒嗘瀽甯堟柊娑堟伅榛樿鍏堝彂椋炰功锛岀瓑浣犳煡鐪嬪悗鍐冲畾鏄惁浜ゆ槗";
+  } else if (selectedPlaybook && tradeIdea) {
     const notionalEstimate =
       Number.parseFloat(tradeIdea.amountQuote || "") ||
       Number.parseFloat(tradeIdea.amountBase || "") ||

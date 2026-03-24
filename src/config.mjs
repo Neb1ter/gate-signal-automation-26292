@@ -68,7 +68,7 @@ export const config = {
   projectRoot,
   host: process.env.HOST || "0.0.0.0",
   port: parseInteger(process.env.PORT, 8787),
-  publicBaseUrl: process.env.PUBLIC_BASE_URL || "",
+  publicBaseUrl: process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL || "",
   approvalSigningSecret: process.env.APPROVAL_SIGNING_SECRET || "replace-me",
   adminAccessToken: process.env.ADMIN_ACCESS_TOKEN || "",
   dryRun: parseBoolean(process.env.DRY_RUN, true),

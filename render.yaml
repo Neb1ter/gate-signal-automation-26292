@@ -47,8 +47,6 @@ services:
         generateValue: true
       - key: ADMIN_ACCESS_TOKEN
         sync: false
-      - key: PUBLIC_BASE_URL
-        sync: false
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: FEISHU_WEBHOOK_URL

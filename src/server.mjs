@@ -362,7 +362,7 @@ function renderPendingQueuePage(pendingSignals) {
       return `<section class="card">
         <div class="meta">
           <span class="pill">${escapeHtml(signal.sourceType === "analyst" ? "分析师策略" : "新闻消息")}</span>
-          <span>${escapeHtml(signal.displaySourceName || signal.sourceName)}</span>
+          <span>${escapeHtml(signal.deliveryDisplayName || signal.displaySourceName || signal.sourceName)}</span>
           <span>${escapeHtml(signal.createdAt)}</span>
         </div>
         <h2>${escapeHtml(tradeSummary)}</h2>
@@ -478,6 +478,8 @@ async function processBaseSignal(baseSignal) {
   }
 
   const { signal } = evaluation;
+  const deliveryOptions = getSignalDeliveryOptions(signal);
+  signal.deliveryDisplayName = deliveryOptions.displayName || signal.displaySourceName;
   store.upsertSignal(signal);
   await notifySignal(signal);
 

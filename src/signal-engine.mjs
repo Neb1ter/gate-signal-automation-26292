@@ -293,6 +293,7 @@ export function evaluateSignal(baseSignal, playbooks, config, store) {
       sourceType: baseSignal.sourceType,
       sourceName: baseSignal.sourceName,
       displaySourceName: presentation.displaySourceName,
+      deliveryDisplayName: "",
       chatId: baseSignal.chatId,
       publishedAt: baseSignal.publishedAt,
       text: baseSignal.text,
@@ -312,7 +313,7 @@ export function evaluateSignal(baseSignal, playbooks, config, store) {
 }
 
 export function renderSignalReviewPage(signal, token) {
-  const sourceLabel = signal.displaySourceName || signal.sourceName;
+  const sourceLabel = signal.deliveryDisplayName || signal.displaySourceName || signal.sourceName;
   const displayText = signal.displayText || signal.text;
   const tradeBlock = signal.tradeIdea
     ? `<p><strong>交易建议:</strong> ${escapeHtml(signal.tradeIdea.summary)}</p>`

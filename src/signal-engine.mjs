@@ -83,8 +83,11 @@ function extractAsset(text, playbook) {
   if (playbook.assetHintRegex) {
     const regex = new RegExp(playbook.assetHintRegex, "i");
     const match = text.match(regex);
-    if (match?.[1]) {
-      return match[1].toUpperCase();
+    if (match) {
+      const candidate = match.slice(1).find(Boolean);
+      if (candidate) {
+        return candidate.toUpperCase();
+      }
     }
   }
 

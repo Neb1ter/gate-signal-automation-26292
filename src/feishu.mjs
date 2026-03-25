@@ -55,54 +55,57 @@ function escapeMarkdown(value) {
     .replaceAll("\\", "\\\\")
     .replaceAll("*", "\\*")
     .replaceAll("_", "\\_")
-    .replaceAll("`", "\\`");
+    .replaceAll("`", "\\`")
+    .replaceAll("[", "\\[")
+    .replaceAll("]", "\\]");
 }
 
 function buildSignalContent(signal, options = {}) {
   const needsDecision = signal.executionStatus === "pending_approval";
   const displaySource = getDisplaySource(signal, options);
-  const lines = [
-    `来源分组：${displaySource}`,
-    `类型：${formatSignalType(signal.sourceType)}`,
-    `评分：${Number(signal.score || 0).toFixed(2)}`,
-    `当前状态：${formatExecutionStatus(signal.executionStatus)}`,
-    `命中策略：${signal.matchedPlaybookIds?.join("、") || "无"}`,
-    `交易建议：${signal.tradeIdea?.summary || "暂未生成可执行订单"}`,
+  const summaryLines = [
+    `- **来源分组**：${escapeMarkdown(displaySource)}`,
+    `- **类型**：${escapeMarkdown(formatSignalType(signal.sourceType))}`,
+    `- **评分**：${escapeMarkdown(Number(signal.score || 0).toFixed(2))}`,
+    `- **当前状态**：${escapeMarkdown(formatExecutionStatus(signal.executionStatus))}`,
+    `- **命中策略**：${escapeMarkdown(signal.matchedPlaybookIds?.join("、") || "无")}`,
+    `- **交易建议**：${escapeMarkdown(signal.tradeIdea?.summary || "暂未生成可执行订单")}`,
   ];
 
   if (signal.executionReason) {
-    lines.push(`说明：${signal.executionReason}`);
+    summaryLines.push(`- **说明**：${escapeMarkdown(signal.executionReason)}`);
   }
+
+  const sections = ["**策略总览**", ...summaryLines];
 
   if (signal.analysis?.normalizedSummary) {
-    lines.push("", "结构化摘要");
-    lines.push(signal.analysis.normalizedSummary);
-  }
-
-  if (signal.sourceType === "analyst") {
-    lines.push("", "隐私处理：已自动隐藏 @用户名、链接与联系方式");
+    const structuredLines = String(signal.analysis.normalizedSummary)
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => `- ${escapeMarkdown(line)}`);
+    sections.push("", "**结构化摘要**", ...structuredLines);
   }
 
   const body = getDisplayText(signal);
   if (body) {
-    lines.push("", "脱敏原文");
-    lines.push(truncateText(body, 2200));
+    sections.push("", "**脱敏原文**", `> ${escapeMarkdown(truncateText(body, 2200)).replaceAll("\n", "\n> ")}`);
   }
 
   if (needsDecision) {
-    lines.push("", "操作说明：点按钮进入中文决策页，再决定是否跟单。");
+    sections.push("", "_点按钮进入中文决策页，再决定是否跟单。_");
   }
 
-  return lines.join("\n");
+  return sections.join("\n");
 }
 
 function buildExecutionContent(signal, result, options = {}) {
   const displaySource = getDisplaySource(signal, options);
   return [
-    `信号 ID：${signal.id}`,
-    `来源分组：${displaySource}`,
-    `执行状态：${formatResultStatus(result.status)}`,
-    `结果说明：${result.message || "无"}`,
+    "**执行结果**",
+    `- **信号 ID**：${escapeMarkdown(signal.id)}`,
+    `- **来源分组**：${escapeMarkdown(displaySource)}`,
+    `- **执行状态**：${escapeMarkdown(formatResultStatus(result.status))}`,
+    `- **结果说明**：${escapeMarkdown(result.message || "无")}`,
   ].join("\n");
 }
 
@@ -121,7 +124,7 @@ function buildBotCardPayload({ title, content, buttons = [], template = "blue" }
       tag: "div",
       text: {
         tag: "lark_md",
-        content: truncateText(escapeMarkdown(content), 3500),
+        content: truncateText(content, 3500),
       },
     },
   ];

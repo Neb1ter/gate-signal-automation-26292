@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import http from "node:http";
 
-import { renderAdminPage } from "./admin-page.mjs";
 import { AnalystAiReviewer } from "./analyst-ai.mjs";
+import { renderAdminPage } from "./admin-page.mjs";
 import { config, ensureRuntimeDirs, loadPlaybooks } from "./config.mjs";
 import { FeishuNotifier } from "./feishu.mjs";
 import { GateSpotClient } from "./gate-api.mjs";
@@ -20,8 +20,6 @@ import { createTelegramSource } from "./telegram.mjs";
 ensureRuntimeDirs();
 const playbooks = loadPlaybooks();
 const store = new JsonStore(config.dataDir);
-const gateClient = new GateSpotClient({ ...config.gate, dryRun: config.dryRun });
-const analystAiReviewer = new AnalystAiReviewer(config.ai);
 const feishuNotifier = new FeishuNotifier({
   webhookUrl: config.feishu.webhookUrl,
   publicBaseUrl: config.publicBaseUrl,
@@ -59,10 +57,44 @@ const defaultRuntimeSettings = {
   execution: {
     newsMode: "auto",
   },
+  ai: {
+    enabled: config.ai.enabled,
+    apiKey: config.ai.apiKey,
+    baseUrl: config.ai.baseUrl,
+    model: config.ai.model,
+    timeoutMs: config.ai.timeoutMs,
+  },
+  gate: {
+    mode: config.dryRun ? "dry_run" : "testnet",
+    apiKey: config.gate.apiKey,
+    apiSecret: config.gate.apiSecret,
+    baseUrl: config.gate.baseUrl,
+  },
 };
 
 function getRuntimeSettings() {
   return store.getRuntimeSettings(defaultRuntimeSettings);
+}
+
+function createAiReviewer(runtimeSettings = getRuntimeSettings()) {
+  return new AnalystAiReviewer({
+    ...config.ai,
+    ...runtimeSettings.ai,
+  });
+}
+
+function createGateClient(runtimeSettings = getRuntimeSettings()) {
+  const gateSettings = runtimeSettings.gate || {};
+  const baseUrl =
+    gateSettings.baseUrl ||
+    (gateSettings.mode === "testnet" ? "https://api-testnet.gateapi.io" : config.gate.baseUrl);
+
+  return new GateSpotClient({
+    apiKey: gateSettings.apiKey || config.gate.apiKey,
+    apiSecret: gateSettings.apiSecret || config.gate.apiSecret,
+    baseUrl,
+    dryRun: gateSettings.mode !== "testnet",
+  });
 }
 
 function getEffectiveTelegramConfig() {
@@ -426,6 +458,8 @@ async function notifySignal(signal) {
 }
 
 async function executeSignal(signal, trigger) {
+  const runtimeSettings = getRuntimeSettings();
+  const gateClient = createGateClient(runtimeSettings);
   const deliveryOptions = getSignalDeliveryOptions(signal);
   if (!signal.tradeIdea) {
     return {
@@ -475,6 +509,7 @@ async function executeSignal(signal, trigger) {
 }
 
 async function processBaseSignal(baseSignal) {
+  const runtimeSettings = getRuntimeSettings();
   const evaluation = evaluateSignal(baseSignal, playbooks, config, store);
   if (evaluation.skipped) {
     return { skipped: true, reason: evaluation.reason };
@@ -482,7 +517,7 @@ async function processBaseSignal(baseSignal) {
 
   const { signal } = evaluation;
   if (signal.sourceType === "analyst") {
-    const aiAnalysis = await analystAiReviewer.review(signal);
+    const aiAnalysis = await createAiReviewer(runtimeSettings).review(signal);
     if (aiAnalysis) {
       applyAiAnalysis(signal, aiAnalysis);
     }
@@ -740,6 +775,8 @@ const server = http.createServer(async (request, response) => {
         publicBaseUrl: config.publicBaseUrl,
         dryRun: config.dryRun,
         autoExecutionEnabled: config.autoExecutionEnabled,
+        runtimeAiEnabled: getRuntimeSettings().ai?.enabled || false,
+        runtimeGateMode: getRuntimeSettings().gate?.mode || "dry_run",
         telegramMode:
           config.telegram.sourceMode === "user" ? "user-stream" : config.telegram.mode,
         telegramSourceMode: config.telegram.sourceMode,
@@ -765,6 +802,8 @@ const server = http.createServer(async (request, response) => {
           signalCount: store.listSignals().length,
           dryRun: config.dryRun,
           autoExecutionEnabled: config.autoExecutionEnabled,
+          runtimeAiEnabled: getRuntimeSettings().ai?.enabled || false,
+          runtimeGateMode: getRuntimeSettings().gate?.mode || "dry_run",
           defaultFeishuConfigured: Boolean(config.feishu.webhookUrl),
           telegramSourceMode: config.telegram.sourceMode,
           telegramRuntimeSummary: getTelegramRuntimeSummary(),

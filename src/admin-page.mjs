@@ -17,6 +17,8 @@ export function renderAdminPage({
   signalCount,
   dryRun,
   autoExecutionEnabled,
+  runtimeAiEnabled,
+  runtimeGateMode,
   defaultFeishuConfigured,
   telegramSourceMode,
   telegramRuntimeSummary,
@@ -30,6 +32,8 @@ export function renderAdminPage({
     signalCount,
     dryRun,
     autoExecutionEnabled,
+    runtimeAiEnabled,
+    runtimeGateMode,
     defaultFeishuConfigured,
     telegramSourceMode,
     telegramRuntimeSummary,
@@ -37,7 +41,6 @@ export function renderAdminPage({
     publicBaseUrl,
   });
 
-  const newsMode = runtimeSettings.execution?.newsMode === "manual" ? "manual" : "auto";
   const accessEntry = publicBaseUrl || `http://127.0.0.1:${port}`;
   const isCloudEntry =
     Boolean(publicBaseUrl) &&
@@ -51,7 +54,6 @@ export function renderAdminPage({
     <title>交易信号后台</title>
     <style>
       :root {
-        color-scheme: light;
         --bg: #f6f8fc;
         --card: #ffffff;
         --text: #182233;
@@ -70,7 +72,7 @@ export function renderAdminPage({
         font: 14px/1.6 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       }
       .shell {
-        max-width: 1280px;
+        max-width: 1380px;
         margin: 0 auto;
         padding: 28px 18px 40px;
       }
@@ -114,7 +116,7 @@ export function renderAdminPage({
       }
       .grid {
         display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(7, minmax(0, 1fr));
         gap: 14px;
         margin-bottom: 20px;
       }
@@ -144,7 +146,7 @@ export function renderAdminPage({
       }
       .panel-grid {
         display: grid;
-        grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
+        grid-template-columns: minmax(420px, 520px) minmax(0, 1fr);
         gap: 18px;
       }
       .stack {
@@ -175,7 +177,8 @@ export function renderAdminPage({
       textarea,
       select,
       input[type="text"],
-      input[type="url"] {
+      input[type="url"],
+      input[type="password"] {
         width: 100%;
         border: 1px solid var(--line);
         border-radius: 12px;
@@ -258,7 +261,7 @@ export function renderAdminPage({
         margin-top: 14px;
         color: var(--muted);
       }
-      @media (max-width: 1080px) {
+      @media (max-width: 1180px) {
         .grid,
         .panel-grid {
           grid-template-columns: 1fr;
@@ -271,8 +274,8 @@ export function renderAdminPage({
       <div class="hero">
         <div class="hero-copy">
           <h1>交易信号后台</h1>
-          <p>这里可以管理 Telegram 监听群、新闻自动交易模式，以及“每个分析师群发到哪个飞书群”。分析师消息会优先做匿名化转发，你可以直接在飞书里看策略，再决定是否跟单。</p>
-          <div class="badge">分析师消息：默认全部转发到飞书，屏蔽链接 / 联系方式 / 用户名</div>
+          <p>这里可以管理 Telegram 监听群、分析师分群转发、新闻自动 / 手动交易模式、AI 结构化能力，以及 Gate 模拟跟单配置。</p>
+          <div class="badge">分析师原文会先脱敏，再按结构化卡片发送到对应飞书群，确认后再决定是否跟单。</div>
         </div>
         <div class="actions">
           <a href="/pending" class="button-link button-secondary">查看待决策</a>
@@ -286,12 +289,12 @@ export function renderAdminPage({
         <div class="card">
           <div class="metric-label">已存信号</div>
           <div class="metric-value">${escapeHtml(signalCount)}</div>
-          <div class="metric-hint">当前数据库里保存的信号数量</div>
+          <div class="metric-hint">当前数据库中已保存的信号数量</div>
         </div>
         <div class="card">
           <div class="metric-label">下单模式</div>
           <div class="metric-value">${dryRun ? "模拟" : "真实"}</div>
-          <div class="metric-hint">${dryRun ? "现在不会真实下单" : "现在允许真实交易"}</div>
+          <div class="metric-hint">${dryRun ? "当前不会真实下单" : "当前允许真实交易"}</div>
         </div>
         <div class="card">
           <div class="metric-label">自动执行总开关</div>
@@ -305,10 +308,18 @@ export function renderAdminPage({
         </div>
         <div class="card">
           <div class="metric-label">Telegram 监听身份</div>
-          <div class="metric-value">${escapeHtml(
-            telegramSourceMode === "user" ? "个人号" : "Bot",
-          )}</div>
+          <div class="metric-value">${escapeHtml(telegramSourceMode === "user" ? "个人号" : "Bot")}</div>
           <div class="metric-hint">${escapeHtml(telegramRuntimeSummary || "尚未连接")}</div>
+        </div>
+        <div class="card">
+          <div class="metric-label">AI 结构化</div>
+          <div class="metric-value">${runtimeSettings.ai?.enabled ? "开启" : "关闭"}</div>
+          <div class="metric-hint">当前运行态：${escapeHtml(runtimeAiEnabled ? "已启用" : "未启用")}</div>
+        </div>
+        <div class="card">
+          <div class="metric-label">Gate 跟单通道</div>
+          <div class="metric-value">${escapeHtml(runtimeSettings.gate?.mode === "testnet" ? "Gate 模拟" : "本地 Dry Run")}</div>
+          <div class="metric-hint">当前运行态：${escapeHtml(runtimeGateMode === "testnet" ? "Gate 模拟交易" : "本地 Dry Run")}</div>
         </div>
       </div>
 
@@ -316,25 +327,25 @@ export function renderAdminPage({
         <div class="stack">
           <div class="card">
             <div class="section-title">新闻交易模式</div>
-            <p class="section-copy">分析师消息始终先发飞书，由你手动决策。这里控制的是新闻消息命中策略后，是自动交易还是先等你确认。</p>
+            <p class="section-copy">分析师消息始终先发飞书，由你手动决策。这里控制的是新闻命中策略后，是自动交易还是先等你确认。</p>
             <div class="field">
               <label for="newsMode">新闻交易模式</label>
               <select id="newsMode">
-                <option value="auto" ${newsMode === "auto" ? "selected" : ""}>自动交易</option>
-                <option value="manual" ${newsMode === "manual" ? "selected" : ""}>手动确认</option>
+                <option value="auto" ${runtimeSettings.execution?.newsMode === "manual" ? "" : "selected"}>自动交易</option>
+                <option value="manual" ${runtimeSettings.execution?.newsMode === "manual" ? "selected" : ""}>手动确认</option>
               </select>
               <small>自动交易：命中新闻策略后直接执行。手动确认：先发飞书，再由你决定是否跟单。</small>
             </div>
           </div>
 
           <div class="card">
-            <div class="section-title">手动填写 Telegram 群 ID</div>
+            <div class="section-title">Telegram 群监听配置</div>
             <p class="section-copy">如果某个群还没被自动识别，可以直接在这里填入 chat id。多个 ID 用英文逗号分隔。</p>
 
             <div class="field">
               <label for="allowedCsv">允许监听的群 ID</label>
               <textarea id="allowedCsv"></textarea>
-              <small>只有这里的群才会被处理。留空则等于允许所有已分类群。</small>
+              <small>只有这里的群才会被处理。留空时等于允许所有已分类群。</small>
             </div>
 
             <div class="field">
@@ -346,31 +357,83 @@ export function renderAdminPage({
               <label for="analystCsv">分析师群 ID</label>
               <textarea id="analystCsv"></textarea>
             </div>
+          </div>
 
-            <div class="status-line" id="statusLine"></div>
+          <div class="card">
+            <div class="section-title">AI 文案结构化配置</div>
+            <p class="section-copy">不开启也能用本地规则解析；开启后，系统会额外调用 AI 对分析师文案做规范化判断和字段补全。</p>
+            <div class="field">
+              <label for="aiEnabled">AI 结构化开关</label>
+              <select id="aiEnabled">
+                <option value="false" ${runtimeSettings.ai?.enabled ? "" : "selected"}>关闭</option>
+                <option value="true" ${runtimeSettings.ai?.enabled ? "selected" : ""}>开启</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="aiBaseUrl">AI API Base URL</label>
+              <input id="aiBaseUrl" type="url" placeholder="https://api.openai.com/v1" value="${escapeHtml(runtimeSettings.ai?.baseUrl || "")}" />
+            </div>
+            <div class="field">
+              <label for="aiModel">AI 模型</label>
+              <input id="aiModel" type="text" placeholder="例如 gpt-5.4-mini 或你自己的兼容模型" value="${escapeHtml(runtimeSettings.ai?.model || "")}" />
+            </div>
+            <div class="field">
+              <label for="aiApiKey">AI API Key</label>
+              <input id="aiApiKey" type="password" placeholder="留空则继续沿用当前已保存的 Key" value="${escapeHtml(runtimeSettings.ai?.apiKey || "")}" />
+            </div>
+            <div class="field">
+              <label for="aiTimeoutMs">AI 超时（毫秒）</label>
+              <input id="aiTimeoutMs" type="text" value="${escapeHtml(runtimeSettings.ai?.timeoutMs || 10000)}" />
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-title">Gate 模拟跟单配置</div>
+            <p class="section-copy">当前建议先接 Gate 模拟交易。保存后，分析师确认跟单会优先走这里的模拟 API；如果不开，则仍然使用本地 Dry Run。</p>
+            <div class="field">
+              <label for="gateMode">Gate 跟单模式</label>
+              <select id="gateMode">
+                <option value="dry_run" ${runtimeSettings.gate?.mode === "testnet" ? "" : "selected"}>本地 Dry Run</option>
+                <option value="testnet" ${runtimeSettings.gate?.mode === "testnet" ? "selected" : ""}>Gate 模拟交易</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="gateBaseUrl">Gate API Base URL</label>
+              <input id="gateBaseUrl" type="url" placeholder="https://api-testnet.gateapi.io" value="${escapeHtml(runtimeSettings.gate?.baseUrl || "")}" />
+              <small>建议模拟交易填写官方 Testnet 地址。</small>
+            </div>
+            <div class="field">
+              <label for="gateApiKey">Gate API Key</label>
+              <input id="gateApiKey" type="password" placeholder="模拟交易 API Key" value="${escapeHtml(runtimeSettings.gate?.apiKey || "")}" />
+            </div>
+            <div class="field">
+              <label for="gateApiSecret">Gate API Secret</label>
+              <input id="gateApiSecret" type="password" placeholder="模拟交易 API Secret" value="${escapeHtml(runtimeSettings.gate?.apiSecret || "")}" />
+            </div>
           </div>
 
           <div class="card">
             <div class="section-title">分析师分群转发</div>
-            <p class="section-copy">你可以把不同的 Telegram 分析师群，分别发到不同的飞书群。每个飞书群都需要自己的自定义机器人 webhook。</p>
-            <div class="badge">${defaultFeishuConfigured ? "已存在默认飞书群：未单独配置时会先发到默认群" : "当前没有默认飞书群：请至少给分析师群配置一个 webhook"}</div>
+            <p class="section-copy">你可以把不同的 Telegram 分析师群分别转发到不同的飞书群。每个飞书群都需要自己的 webhook。</p>
+            <div class="badge">${defaultFeishuConfigured ? "已存在默认飞书群：未单独配置时会回落到默认群" : "当前没有默认飞书群：请至少给分析师群配置一个 webhook"}</div>
             <div id="analystRoutesWrap" class="route-grid"></div>
           </div>
 
           <div class="card">
             <div class="section-title">使用说明</div>
             <div class="hint-list">
-              <div>1. 发现表里勾选哪些群属于“分析师群”或“新闻群”。</div>
-              <div>2. 在“分析师分群转发”里，为需要单独接收的分析师群填入飞书 webhook。</div>
-              <div>3. 分析师正文会尽量原样转发，但会自动隐藏链接、联系方式、用户名，降低版权和引流风险。</div>
-              <div>4. 现在是 ${telegramSourceMode === "user" ? "Telegram 个人号" : "Telegram Bot"} 监听，只要这边能收到群消息，飞书就能继续推送。</div>
+              <div>1. 右侧“已发现的 Telegram 群聊”里勾选哪些群属于“新闻群”或“分析师群”。</div>
+              <div>2. 分析师消息会尽量按结构化格式转发；无法下单的纯分析，也会作为结构化观点卡片发送。</div>
+              <div>3. 飞书消息里只展示脱敏后的正文，不再额外显示“隐私处理”提示语。</div>
+              <div>4. Gate 模拟交易需要你自己的模拟 API Key / Secret；未配置时仍会走本地 Dry Run。</div>
             </div>
+            <div class="status-line" id="statusLine"></div>
           </div>
         </div>
 
         <div class="card">
           <div class="section-title">已发现的 Telegram 群聊</div>
-          <p class="section-copy">这里会把系统已看过的群、以及你手动配置但还没收到过首条消息的群一起显示出来。你不用再自己记 ID，只要看群名即可。</p>
+          <p class="section-copy">这里会把系统见过的群，以及你手工配置但还没收到过首条消息的群一起展示出来。你不用再自己记 chat id，只要看群名即可。</p>
           <div id="chatTableWrap"></div>
         </div>
       </div>
@@ -394,12 +457,34 @@ export function renderAdminPage({
           ]),
         ),
         newsMode: bootstrap.runtimeSettings.execution?.newsMode === "manual" ? "manual" : "auto",
+        ai: {
+          enabled: Boolean(bootstrap.runtimeSettings.ai?.enabled),
+          baseUrl: String(bootstrap.runtimeSettings.ai?.baseUrl || ""),
+          model: String(bootstrap.runtimeSettings.ai?.model || ""),
+          apiKey: String(bootstrap.runtimeSettings.ai?.apiKey || ""),
+          timeoutMs: String(bootstrap.runtimeSettings.ai?.timeoutMs || "10000"),
+        },
+        gate: {
+          mode: String(bootstrap.runtimeSettings.gate?.mode || "dry_run"),
+          baseUrl: String(bootstrap.runtimeSettings.gate?.baseUrl || ""),
+          apiKey: String(bootstrap.runtimeSettings.gate?.apiKey || ""),
+          apiSecret: String(bootstrap.runtimeSettings.gate?.apiSecret || ""),
+        },
       };
 
       const allowedCsv = document.getElementById("allowedCsv");
       const newsCsv = document.getElementById("newsCsv");
       const analystCsv = document.getElementById("analystCsv");
       const newsMode = document.getElementById("newsMode");
+      const aiEnabled = document.getElementById("aiEnabled");
+      const aiBaseUrl = document.getElementById("aiBaseUrl");
+      const aiModel = document.getElementById("aiModel");
+      const aiApiKey = document.getElementById("aiApiKey");
+      const aiTimeoutMs = document.getElementById("aiTimeoutMs");
+      const gateMode = document.getElementById("gateMode");
+      const gateBaseUrl = document.getElementById("gateBaseUrl");
+      const gateApiKey = document.getElementById("gateApiKey");
+      const gateApiSecret = document.getElementById("gateApiSecret");
       const statusLine = document.getElementById("statusLine");
       const chatTableWrap = document.getElementById("chatTableWrap");
       const analystRoutesWrap = document.getElementById("analystRoutesWrap");
@@ -483,6 +568,15 @@ export function renderAdminPage({
         newsCsv.value = nonDiscoveredFromSet(state.news);
         analystCsv.value = nonDiscoveredFromSet(state.analyst);
         newsMode.value = state.newsMode;
+        aiEnabled.value = state.ai.enabled ? "true" : "false";
+        aiBaseUrl.value = state.ai.baseUrl;
+        aiModel.value = state.ai.model;
+        aiApiKey.value = state.ai.apiKey;
+        aiTimeoutMs.value = state.ai.timeoutMs;
+        gateMode.value = state.gate.mode;
+        gateBaseUrl.value = state.gate.baseUrl;
+        gateApiKey.value = state.gate.apiKey;
+        gateApiSecret.value = state.gate.apiSecret;
       }
 
       function checked(set, id) {
@@ -559,9 +653,9 @@ export function renderAdminPage({
                       data-route-id="\${escapeClientHtml(chatId)}"
                       data-route-field="displayName"
                       value="\${escapeClientHtml(route.displayName)}"
-                      placeholder="例如：三马哥策略专线 / 分析师专线 6001"
+                      placeholder="例如：三马哥策略专线"
                     />
-                    <small>这里建议填你自己的群名或匿名名。飞书消息里会显示这个名字，而不是 Telegram 原始作者身份。</small>
+                    <small>飞书消息里会显示这个名字，而不是 Telegram 原始作者身份。</small>
                   </div>
                   <div>
                     <label>飞书机器人 Webhook</label>
@@ -572,7 +666,7 @@ export function renderAdminPage({
                       value="\${escapeClientHtml(route.webhookUrl)}"
                       placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
                     />
-                    <small>留空时会回落到默认飞书群；填了以后，这个分析师群就会单独发到你指定的飞书群。</small>
+                    <small>留空时会回落到默认飞书群；填写后，这个分析师群就会单独发到指定的飞书群。</small>
                   </div>
                 </div>
               </section>
@@ -604,18 +698,32 @@ export function renderAdminPage({
 
       document.addEventListener("input", (event) => {
         const target = event.target;
-        if (!(target instanceof HTMLInputElement)) return;
-        const routeId = target.dataset.routeId;
-        const routeField = target.dataset.routeField;
-        if (!routeId || !routeField) return;
-        const current = state.analystRoutes.get(routeId) || { webhookUrl: "", displayName: "" };
-        current[routeField] = target.value;
-        state.analystRoutes.set(routeId, current);
+        if (target instanceof HTMLInputElement) {
+          const routeId = target.dataset.routeId;
+          const routeField = target.dataset.routeField;
+          if (routeId && routeField) {
+            const current = state.analystRoutes.get(routeId) || { webhookUrl: "", displayName: "" };
+            current[routeField] = target.value;
+            state.analystRoutes.set(routeId, current);
+          }
+        }
       });
 
       newsMode.addEventListener("change", () => {
         state.newsMode = newsMode.value === "manual" ? "manual" : "auto";
       });
+
+      aiEnabled.addEventListener("change", () => {
+        state.ai.enabled = aiEnabled.value === "true";
+      });
+      aiBaseUrl.addEventListener("input", () => { state.ai.baseUrl = aiBaseUrl.value.trim(); });
+      aiModel.addEventListener("input", () => { state.ai.model = aiModel.value.trim(); });
+      aiApiKey.addEventListener("input", () => { state.ai.apiKey = aiApiKey.value.trim(); });
+      aiTimeoutMs.addEventListener("input", () => { state.ai.timeoutMs = aiTimeoutMs.value.trim(); });
+      gateMode.addEventListener("change", () => { state.gate.mode = gateMode.value === "testnet" ? "testnet" : "dry_run"; });
+      gateBaseUrl.addEventListener("input", () => { state.gate.baseUrl = gateBaseUrl.value.trim(); });
+      gateApiKey.addEventListener("input", () => { state.gate.apiKey = gateApiKey.value.trim(); });
+      gateApiSecret.addEventListener("input", () => { state.gate.apiSecret = gateApiSecret.value.trim(); });
 
       document.getElementById("reload").addEventListener("click", () => {
         location.reload();
@@ -643,6 +751,19 @@ export function renderAdminPage({
           execution: {
             newsMode: state.newsMode,
           },
+          ai: {
+            enabled: state.ai.enabled,
+            baseUrl: state.ai.baseUrl,
+            model: state.ai.model,
+            apiKey: state.ai.apiKey,
+            timeoutMs: Number.parseInt(state.ai.timeoutMs || "10000", 10) || 10000,
+          },
+          gate: {
+            mode: state.gate.mode,
+            baseUrl: state.gate.baseUrl,
+            apiKey: state.gate.apiKey,
+            apiSecret: state.gate.apiSecret,
+          },
         };
 
         refreshStatus("保存中...", false);
@@ -650,9 +771,7 @@ export function renderAdminPage({
         try {
           const response = await fetch("/api/runtime-settings", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
           });
 
@@ -674,13 +793,26 @@ export function renderAdminPage({
             ]),
           );
           state.newsMode = saved.execution?.newsMode === "manual" ? "manual" : "auto";
+          state.ai = {
+            enabled: Boolean(saved.ai?.enabled),
+            baseUrl: String(saved.ai?.baseUrl || ""),
+            model: String(saved.ai?.model || ""),
+            apiKey: String(saved.ai?.apiKey || ""),
+            timeoutMs: String(saved.ai?.timeoutMs || "10000"),
+          };
+          state.gate = {
+            mode: String(saved.gate?.mode || "dry_run"),
+            baseUrl: String(saved.gate?.baseUrl || ""),
+            apiKey: String(saved.gate?.apiKey || ""),
+            apiSecret: String(saved.gate?.apiSecret || ""),
+          };
 
           syncManualFields();
           renderChats();
           renderAnalystRoutes();
-          refreshStatus("已保存。新的 Telegram 消息会立刻按新路由和新模式处理。", false);
+          refreshStatus("设置已保存。新的 Telegram 消息会按最新配置继续流转。", false);
         } catch (error) {
-          refreshStatus("保存失败：" + error.message, true);
+          refreshStatus("保存失败：" + (error?.message || error), true);
         }
       });
 

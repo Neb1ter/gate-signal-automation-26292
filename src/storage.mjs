@@ -27,6 +27,28 @@ function normalizeAnalystRoutes(value) {
   return normalized;
 }
 
+function normalizeAiSettings(value, defaults = {}) {
+  const source = value || {};
+  return {
+    enabled: source.enabled === undefined ? Boolean(defaults.enabled) : Boolean(source.enabled),
+    apiKey: String(source.apiKey ?? defaults.apiKey ?? "").trim(),
+    baseUrl: String(source.baseUrl ?? defaults.baseUrl ?? "").trim(),
+    model: String(source.model ?? defaults.model ?? "").trim(),
+    timeoutMs: Number(source.timeoutMs ?? defaults.timeoutMs ?? 10000) || 10000,
+  };
+}
+
+function normalizeGateSettings(value, defaults = {}) {
+  const source = value || {};
+  const mode = String(source.mode ?? defaults.mode ?? "dry_run").trim();
+  return {
+    mode: ["dry_run", "testnet"].includes(mode) ? mode : "dry_run",
+    apiKey: String(source.apiKey ?? defaults.apiKey ?? "").trim(),
+    apiSecret: String(source.apiSecret ?? defaults.apiSecret ?? "").trim(),
+    baseUrl: String(source.baseUrl ?? defaults.baseUrl ?? "").trim(),
+  };
+}
+
 export class JsonStore {
   constructor(dataDir) {
     this.filePath = path.join(dataDir, "state.json");
@@ -71,6 +93,8 @@ export class JsonStore {
       execution: {
         newsMode: defaults.execution?.newsMode === "manual" ? "manual" : "auto",
       },
+      ai: normalizeAiSettings(defaults.ai, defaults.ai),
+      gate: normalizeGateSettings(defaults.gate, defaults.gate),
     };
   }
 
@@ -108,6 +132,8 @@ export class JsonStore {
         newsMode:
           this.state.runtimeSettings?.execution?.newsMode === "manual" ? "manual" : "auto",
       },
+      ai: normalizeAiSettings(this.state.runtimeSettings?.ai, fallback.ai),
+      gate: normalizeGateSettings(this.state.runtimeSettings?.gate, fallback.gate),
     };
   }
 
@@ -115,6 +141,8 @@ export class JsonStore {
     const current = this.getRuntimeSettings(defaults);
     const nextTelegram = nextSettings?.telegram || {};
     const nextFeishu = nextSettings?.feishu || {};
+    const nextAi = nextSettings?.ai || {};
+    const nextGate = nextSettings?.gate || {};
 
     this.state.runtimeSettings = {
       telegram: {
@@ -134,6 +162,8 @@ export class JsonStore {
       execution: {
         newsMode: nextSettings?.execution?.newsMode === "manual" ? "manual" : "auto",
       },
+      ai: normalizeAiSettings(nextAi, current.ai),
+      gate: normalizeGateSettings(nextGate, current.gate),
     };
 
     this.save();

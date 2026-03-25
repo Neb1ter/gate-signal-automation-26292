@@ -24,6 +24,25 @@ function trimInteger(value) {
   return String(numeric);
 }
 
+function parseNumeric(value) {
+  const numeric = Number.parseFloat(String(value ?? "").trim());
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function hasOpenFuturesPosition(position) {
+  const size = parseNumeric(position?.size);
+  return size !== null && Math.abs(size) > 0;
+}
+
+function extractPositionLeverage(position) {
+  return (
+    trimInteger(position?.leverage) ||
+    trimInteger(position?.cross_leverage_limit) ||
+    trimInteger(position?.crossLeverageLimit) ||
+    ""
+  );
+}
+
 function normalizeBaseUrl(value) {
   return String(value || "")
     .trim()
@@ -188,6 +207,20 @@ export class GateSpotClient {
     );
   }
 
+  async tryGetFuturesPosition(contract, settle = "usdt") {
+    if (!this.isConfigured()) {
+      return null;
+    }
+    try {
+      return await this.getFuturesPosition(contract, settle);
+    } catch (error) {
+      if (/POSITION_NOT_FOUND|not found|404/i.test(String(error.message || ""))) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
   async updateFuturesLeverage(contract, leverage, settle = "usdt") {
     const normalizedLeverage = trimInteger(String(leverage || "").replace(/x$/i, ""));
     if (!normalizedLeverage) {
@@ -273,7 +306,12 @@ export class GateSpotClient {
       Number.parseFloat(contractInfo?.mark_price || "") ||
       Number.parseFloat(contractInfo?.last_price || "") ||
       0;
-    const leverage = trimInteger(String(action.leverage || "1").replace(/x$/i, "")) || "1";
+    const requestedLeverage =
+      trimInteger(String(action.leverage || "").replace(/x$/i, "")) || "20";
+    const position = await this.tryGetFuturesPosition(contract, settle);
+    const currentLeverage = extractPositionLeverage(position);
+    const hasOpenPosition = hasOpenFuturesPosition(position);
+    const leverage = hasOpenPosition && currentLeverage ? currentLeverage : requestedLeverage;
     const estimated = this.estimateFuturesContracts({
       contractInfo,
       referencePrice,
@@ -287,8 +325,11 @@ export class GateSpotClient {
       settle,
       contract,
       contractInfo,
+      position,
+      hasOpenPosition,
       referencePrice: referencePrice ? trimAmount(referencePrice) : "",
       leverage,
+      leverageSource: hasOpenPosition && currentLeverage ? "current_position" : "requested_or_default",
       estimatedContracts: estimated.size,
       estimatedFrom: estimated.source,
       orderType: action.orderType || (String(action.kind || "").includes("limit") ? "limit" : "market"),
@@ -353,7 +394,9 @@ export class GateSpotClient {
       throw new Error("Gate API Key / Secret 尚未配置，暂时无法真实下单");
     }
 
-    await this.updateFuturesLeverage(contract, leverage, settle);
+    if (!preview?.hasOpenPosition) {
+      await this.updateFuturesLeverage(contract, leverage, settle);
+    }
     return this.request("POST", `/futures/${encodeURIComponent(settle)}/orders`, "", body);
   }
 

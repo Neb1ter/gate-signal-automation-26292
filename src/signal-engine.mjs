@@ -717,7 +717,7 @@ function buildTradeIdeaV2(baseSignal, analysis, selectedPlaybook, analystConfig 
     orderType,
     timeInForce: defaults.timeInForce || (orderType === "limit" ? "gtc" : "ioc"),
     account: defaults.account || "futures",
-    leverage: String(analysis.leverage || defaults.leverage || "5").replace(/x$/i, ""),
+    leverage: String(analysis.leverage || defaults.leverage || "20").replace(/x$/i, ""),
     clientOrderId: `t-analyst-${Date.now().toString().slice(-8)}`,
   };
 
@@ -771,7 +771,7 @@ function buildPlaybookTradeIdeaV2(playbook, asset, analysis) {
   action.orderType =
     analysis?.orderType || action.orderType || (String(action.kind || "").includes("limit") ? "limit" : "market");
   action.kind = action.orderType === "limit" ? "futures_limit" : "futures_market";
-  action.leverage = String(analysis?.leverage || action.leverage || "5").replace(/x$/i, "");
+  action.leverage = String(analysis?.leverage || action.leverage || "20").replace(/x$/i, "");
 
   if (analysis?.direction && ["buy", "sell"].includes(analysis.direction)) {
     action.side = analysis.direction;
@@ -1238,10 +1238,14 @@ function renderSignalReviewPageV2(signal, token, options = {}) {
   const tradeIdea = signal.tradeIdea || {};
   const title = signal.sourceType === "analyst" ? "分析师策略确认" : "新闻交易确认";
   const orderType = tradeIdea.orderType || (String(tradeIdea.kind || "").includes("limit") ? "limit" : "market");
-  const leverage = String(tradeIdea.leverage || preview.leverage || "5").replace(/x$/i, "");
+  const leverage = String(tradeIdea.leverage || preview.leverage || "20").replace(/x$/i, "");
   const size = tradeIdea.size || preview.estimatedContracts || "";
   const price = tradeIdea.price || preview.referencePrice || "";
   const marginQuote = tradeIdea.marginQuote || tradeIdea.amountQuote || preview.marginQuote || "";
+  const leverageHint =
+    preview?.leverageSource === "current_position"
+      ? `检测到 ${tradeIdea.symbol || preview.contract || "当前合约"} 已有仓位，默认沿用当前杠杆 ${leverage}x。`
+      : `当前默认杠杆为 ${leverage}x；如果分析师未明确说明，你也可以在这里改成自己的杠杆。`;
   const structuredBlock = signal.analysis?.normalizedSummary
     ? `<div class="structured"><h2>结构化摘要</h2><pre>${escapeHtml(signal.analysis.normalizedSummary)}</pre></div>`
     : "";
@@ -1300,7 +1304,7 @@ function renderSignalReviewPageV2(signal, token, options = {}) {
       </div>
       ${tradeBlock}
       ${structuredBlock}
-      <div class="callout">${escapeHtml(orderTypeExplain)}</div>
+      <div class="callout">${escapeHtml(orderTypeExplain)} ${escapeHtml(leverageHint)}</div>
       <form method="post" action="/signals/${signal.id}/approve?token=${encodeURIComponent(token)}">
         <div class="form-grid">
           <div class="field-card">

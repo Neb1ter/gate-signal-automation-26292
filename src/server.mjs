@@ -244,7 +244,7 @@ function applyManualTradeOverrides(signal, form = {}) {
     side: ["buy", "sell"].includes(String(form.side || "").toLowerCase())
       ? String(form.side).toLowerCase()
       : signal.tradeIdea.side,
-    leverage: String(form.leverage || signal.tradeIdea.leverage || "5").replace(/x$/i, ""),
+    leverage: String(form.leverage || signal.tradeIdea.leverage || "20").replace(/x$/i, ""),
     size: String(form.size || signal.tradeIdea.size || "").trim(),
     price: String(form.price || signal.tradeIdea.price || "").trim(),
     marginQuote: String(

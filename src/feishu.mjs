@@ -39,7 +39,122 @@ function getDisplaySource(signal, options) {
 }
 
 function getDisplayText(signal) {
-  return signal.displayText || signal.text || "";
+  return String(signal.displayText || signal.text || "").trim();
+}
+
+function truncateText(text, limit = 3500) {
+  const value = String(text || "");
+  if (value.length <= limit) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(0, limit - 10))}\n\n[内容已截断]`;
+}
+
+function escapeMarkdown(value) {
+  return String(value ?? "")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("*", "\\*")
+    .replaceAll("_", "\\_")
+    .replaceAll("`", "\\`");
+}
+
+function buildSignalContent(signal, options = {}) {
+  const needsDecision = signal.executionStatus === "pending_approval";
+  const displaySource = getDisplaySource(signal, options);
+  const analystPrivacyHint =
+    signal.sourceType === "analyst" ? "已自动隐藏原始链接、联系方式和用户名" : "";
+
+  const lines = [
+    `来源分组：${displaySource}`,
+    `类型：${formatSignalType(signal.sourceType)}`,
+    `评分：${Number(signal.score || 0).toFixed(2)}`,
+    `当前状态：${formatExecutionStatus(signal.executionStatus)}`,
+    `命中策略：${signal.matchedPlaybookIds?.join("、") || "无"}`,
+    `交易建议：${signal.tradeIdea?.summary || "暂无结构化交易建议"}`,
+  ];
+
+  if (signal.executionReason) {
+    lines.push(`说明：${signal.executionReason}`);
+  }
+
+  if (analystPrivacyHint) {
+    lines.push(`隐私处理：${analystPrivacyHint}`);
+  }
+
+  const body = getDisplayText(signal);
+  if (body) {
+    lines.push("", truncateText(body, 2500));
+  }
+
+  if (needsDecision) {
+    lines.push("", "操作说明：点击下方按钮进入中文决策页，再决定是否跟单。");
+  }
+
+  return lines.join("\n");
+}
+
+function buildExecutionContent(signal, result, options = {}) {
+  const displaySource = getDisplaySource(signal, options);
+  return [
+    `信号 ID：${signal.id}`,
+    `来源分组：${displaySource}`,
+    `执行状态：${formatResultStatus(result.status)}`,
+    `结果说明：${result.message || "无"}`,
+  ].join("\n");
+}
+
+function buildLegacyPayload({ title, content, buttonUrl = "", buttonText = "" }) {
+  return {
+    title,
+    content,
+    button_url: buttonUrl,
+    button_text: buttonText,
+  };
+}
+
+function buildBotCardPayload({ title, content, buttons = [], template = "blue" }) {
+  const elements = [
+    {
+      tag: "div",
+      text: {
+        tag: "lark_md",
+        content: truncateText(escapeMarkdown(content), 3500),
+      },
+    },
+  ];
+
+  const visibleButtons = buttons.filter((button) => button?.url && button?.text);
+  if (visibleButtons.length) {
+    elements.push({
+      tag: "action",
+      actions: visibleButtons.map((button, index) => ({
+        tag: "button",
+        text: {
+          tag: "plain_text",
+          content: button.text,
+        },
+        type: button.type || (index === 0 ? "primary" : "default"),
+        url: button.url,
+      })),
+    });
+  }
+
+  return {
+    msg_type: "interactive",
+    card: {
+      config: {
+        wide_screen_mode: true,
+      },
+      header: {
+        template,
+        title: {
+          tag: "plain_text",
+          content: title,
+        },
+      },
+      elements,
+    },
+  };
 }
 
 export class FeishuNotifier {
@@ -54,6 +169,10 @@ export class FeishuNotifier {
 
   isConfigured(overrideWebhookUrl = "") {
     return Boolean(this.resolveWebhookUrl(overrideWebhookUrl));
+  }
+
+  isBotWebhook(webhookUrl) {
+    return /\/open-apis\/bot\/v2\/hook\//i.test(String(webhookUrl || ""));
   }
 
   buildReviewUrl(signalId, approvalToken) {
@@ -77,7 +196,7 @@ export class FeishuNotifier {
     return `${this.publicBaseUrl.replace(/\/$/, "")}/signals/${signalId}/reject?token=${approvalToken}`;
   }
 
-  async postFlowPayload(payload, overrideWebhookUrl = "") {
+  async postWebhook(payload, overrideWebhookUrl = "") {
     const webhookUrl = this.resolveWebhookUrl(overrideWebhookUrl);
     if (!webhookUrl) {
       throw new Error("Feishu webhook is not configured");
@@ -95,6 +214,13 @@ export class FeishuNotifier {
       const details = await response.text().catch(() => "");
       throw new Error(`Feishu webhook failed: ${response.status} ${details}`.trim());
     }
+
+    const data = await response.json().catch(() => null);
+    if (data && typeof data.code === "number" && data.code !== 0) {
+      throw new Error(`Feishu webhook rejected request: ${data.msg || data.code}`);
+    }
+
+    return data;
   }
 
   async sendSignalCard(signal, approvalToken, options = {}) {
@@ -102,54 +228,47 @@ export class FeishuNotifier {
       return;
     }
 
+    const webhookUrl = this.resolveWebhookUrl(options.webhookUrl);
+    const needsDecision = signal.executionStatus === "pending_approval";
     const reviewUrl = this.buildReviewUrl(signal.id, approvalToken);
     const approveUrl = this.buildApproveUrl(signal.id, approvalToken);
     const rejectUrl = this.buildRejectUrl(signal.id, approvalToken);
-    const needsDecision = signal.executionStatus === "pending_approval";
     const displaySource = getDisplaySource(signal, options);
-    const displayText = getDisplayText(signal);
-    const analystPrivacyHint =
-      signal.sourceType === "analyst" ? "已自动隐藏原始链接、联系方式和用户名" : "";
+    const title =
+      signal.sourceType === "analyst" ? `${displaySource} 策略提醒` : "新闻交易提醒";
+    const content = buildSignalContent(signal, options);
 
-    const contentLines = [
-      `来源分组：${displaySource}`,
-      `类型：${formatSignalType(signal.sourceType)}`,
-      `评分：${signal.score.toFixed(2)}`,
-      `当前状态：${formatExecutionStatus(signal.executionStatus)}`,
-      `命中策略：${signal.matchedPlaybookIds.join("、") || "无"}`,
-      `交易建议：${signal.tradeIdea ? signal.tradeIdea.summary : "暂无结构化交易建议"}`,
-    ];
+    if (this.isBotWebhook(webhookUrl)) {
+      const buttons = needsDecision
+        ? [
+            { text: "打开决策面板", url: reviewUrl, type: "primary" },
+            { text: "快速跟单", url: approveUrl, type: "primary" },
+            { text: "忽略这单", url: rejectUrl, type: "default" },
+          ]
+        : reviewUrl
+          ? [{ text: "查看详情", url: reviewUrl, type: "primary" }]
+          : [];
 
-    if (signal.executionReason) {
-      contentLines.push(`说明：${signal.executionReason}`);
+      await this.postWebhook(
+        buildBotCardPayload({
+          title,
+          content,
+          buttons,
+          template: signal.sourceType === "analyst" ? "blue" : "green",
+        }),
+        webhookUrl,
+      );
+      return;
     }
 
-    if (analystPrivacyHint) {
-      contentLines.push(`隐私处理：${analystPrivacyHint}`);
-    }
-
-    contentLines.push("", displayText);
-
-    if (needsDecision) {
-      contentLines.push("", "操作说明：点击下方按钮进入中文确认页，再决定是否跟单。");
-      if (approveUrl) {
-        contentLines.push(`快速跟单链接：${approveUrl}`);
-      }
-      if (rejectUrl) {
-        contentLines.push(`忽略链接：${rejectUrl}`);
-      }
-    } else if (reviewUrl) {
-      contentLines.push("", `详情页：${reviewUrl}`);
-    }
-
-    await this.postFlowPayload(
-      {
-        title: signal.sourceType === "analyst" ? `${displaySource} 策略提醒` : "新闻交易提醒",
-        content: contentLines.join("\n"),
-        button_url: needsDecision ? reviewUrl : "",
-        button_text: needsDecision ? "打开决策面板" : "",
-      },
-      options.webhookUrl,
+    await this.postWebhook(
+      buildLegacyPayload({
+        title,
+        content,
+        buttonUrl: needsDecision ? reviewUrl : "",
+        buttonText: needsDecision ? "打开决策面板" : "",
+      }),
+      webhookUrl,
     );
   }
 
@@ -158,21 +277,32 @@ export class FeishuNotifier {
       return;
     }
 
-    const displaySource = getDisplaySource(signal, options);
+    const webhookUrl = this.resolveWebhookUrl(options.webhookUrl);
+    const title = "交易结果通知";
+    const content = buildExecutionContent(signal, result, options);
+    const reviewUrl = this.publicBaseUrl
+      ? `${this.publicBaseUrl.replace(/\/$/, "")}/signals/${signal.id}`
+      : "";
 
-    await this.postFlowPayload(
-      {
-        title: "交易结果通知",
-        content: [
-          `信号 ID：${signal.id}`,
-          `来源分组：${displaySource}`,
-          `执行状态：${formatResultStatus(result.status)}`,
-          `结果说明：${result.message}`,
-        ].join("\n"),
-        button_url: "",
-        button_text: "",
-      },
-      options.webhookUrl,
+    if (this.isBotWebhook(webhookUrl)) {
+      await this.postWebhook(
+        buildBotCardPayload({
+          title,
+          content,
+          buttons: reviewUrl ? [{ text: "查看信号详情", url: reviewUrl, type: "primary" }] : [],
+          template: result.status === "failed" ? "red" : "turquoise",
+        }),
+        webhookUrl,
+      );
+      return;
+    }
+
+    await this.postWebhook(
+      buildLegacyPayload({
+        title,
+        content,
+      }),
+      webhookUrl,
     );
   }
 }

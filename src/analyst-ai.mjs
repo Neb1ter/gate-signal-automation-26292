@@ -1,4 +1,4 @@
-function buildUrl(baseUrl) {
+﻿function buildUrl(baseUrl) {
   const trimmed = String(baseUrl || "").replace(/\/$/, "");
   if (!trimmed) {
     return "";
@@ -48,10 +48,10 @@ function normalizeDirection(value) {
 
 function normalizeOrderType(value) {
   const normalized = String(value || "").toLowerCase();
-  if (["market", "市价", "市价单"].includes(normalized)) {
+  if (["market", "market order", "shi jia", "shijia"].includes(normalized)) {
     return "market";
   }
-  if (["limit", "限价", "限价单"].includes(normalized)) {
+  if (["limit", "limit order", "xian jia", "xianjia"].includes(normalized)) {
     return "limit";
   }
   return "";
@@ -127,12 +127,12 @@ function buildPrimaryMessages(signal) {
     {
       role: "system",
       content:
-        "你是中文交易策略结构化助手。请把分析师原文整理成严格 JSON，只输出 JSON，不要额外解释。不要编造缺失信息。messageType 只能是 strategy、analysis、watchlist、brief。direction 只能是 buy、sell 或空字符串。orderType 只能是 market、limit 或空字符串。",
+        "You are a trading-signal structuring assistant. Convert the analyst text into strict JSON only. Do not add explanations. Do not invent missing facts. messageType must be one of strategy, analysis, watchlist, brief. direction must be buy, sell, or an empty string. orderType must be market, limit, or an empty string.",
     },
     {
       role: "user",
       content: JSON.stringify({
-        task: "从分析师文案里提取结构化交易字段",
+        task: "Extract structured trading fields from the analyst text.",
         expectedFields: [
           "messageType",
           "asset",
@@ -166,12 +166,12 @@ function buildReviewMessages(signal, extracted) {
     {
       role: "system",
       content:
-        "你是交易风控复核助手。请根据原始中文文案和第一阶段提取结果做二次校正，只输出严格 JSON。重点判断：字段是否合理、是否适合自动化执行、是否存在歧义或风险。automationReady 只在方向、标的、执行方式都足够明确时返回 true。",
+        "You are a trading-risk review assistant. Re-check the extracted result against the original analyst text and return strict JSON only. Focus on whether the fields are reasonable, whether the signal is automation-ready, and whether there is ambiguity or risk. automationReady should be true only when the asset, direction, and execution intent are all sufficiently clear.",
     },
     {
       role: "user",
       content: JSON.stringify({
-        task: "复核并修正分析师策略结构化结果",
+        task: "Review and correct the structured analyst output.",
         expectedFields: [
           "messageType",
           "asset",
@@ -292,11 +292,12 @@ export class AnalystAiReviewer {
         provider: this.provider,
         primaryModel: this.primaryModel,
         reviewModel: this.reviewEnabled ? this.reviewModel : "",
-        complianceComment: `AI 结构化未完成：${
-          error.name === "AbortError" ? "请求超时" : error.message
+        complianceComment: `AI 缁撴瀯鍖栨湭瀹屾垚锛?{
+          error.name === "AbortError" ? "璇锋眰瓒呮椂" : error.message
         }`,
         riskFlags: [],
       };
     }
   }
 }
+

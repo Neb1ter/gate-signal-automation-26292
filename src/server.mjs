@@ -2,10 +2,12 @@ import crypto from "node:crypto";
 import http from "node:http";
 
 import { renderAdminPage } from "./admin-page.mjs";
+import { AnalystAiReviewer } from "./analyst-ai.mjs";
 import { config, ensureRuntimeDirs, loadPlaybooks } from "./config.mjs";
 import { FeishuNotifier } from "./feishu.mjs";
 import { GateSpotClient } from "./gate-api.mjs";
 import {
+  applyAiAnalysis,
   buildAnalystPrivacyAlias,
   createSignalFromPayload,
   createSignalFromTelegramMessage,
@@ -19,6 +21,7 @@ ensureRuntimeDirs();
 const playbooks = loadPlaybooks();
 const store = new JsonStore(config.dataDir);
 const gateClient = new GateSpotClient({ ...config.gate, dryRun: config.dryRun });
+const analystAiReviewer = new AnalystAiReviewer(config.ai);
 const feishuNotifier = new FeishuNotifier({
   webhookUrl: config.feishu.webhookUrl,
   publicBaseUrl: config.publicBaseUrl,
@@ -478,6 +481,12 @@ async function processBaseSignal(baseSignal) {
   }
 
   const { signal } = evaluation;
+  if (signal.sourceType === "analyst") {
+    const aiAnalysis = await analystAiReviewer.review(signal);
+    if (aiAnalysis) {
+      applyAiAnalysis(signal, aiAnalysis);
+    }
+  }
   const deliveryOptions = getSignalDeliveryOptions(signal);
   signal.deliveryDisplayName = deliveryOptions.displayName || signal.displaySourceName;
   store.upsertSignal(signal);

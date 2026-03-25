@@ -108,6 +108,13 @@ export const config = {
   feishu: {
     webhookUrl: process.env.FEISHU_WEBHOOK_URL || "",
   },
+  ai: {
+    enabled: parseBoolean(process.env.AI_REVIEW_ENABLED, false),
+    apiKey: process.env.AI_API_KEY || process.env.OPENAI_API_KEY || "",
+    baseUrl: process.env.AI_API_BASE_URL || "https://api.openai.com/v1",
+    model: process.env.AI_MODEL || "",
+    timeoutMs: parseInteger(process.env.AI_TIMEOUT_MS, 10000),
+  },
   gate: {
     apiKey: process.env.GATE_API_KEY || "",
     apiSecret: process.env.GATE_API_SECRET || "",

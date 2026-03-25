@@ -544,6 +544,71 @@ async function safeNotifyExecutionResult(signal, executionResult, deliveryOption
   }
 }
 
+let processingChain = Promise.resolve();
+
+function enqueueSignalProcessing(signalId) {
+  processingChain = processingChain
+    .then(() => finalizeSignalProcessing(signalId))
+    .catch((error) => {
+      const signal = store.getSignal(signalId);
+      if (signal) {
+        signal.processingState = "failed";
+        signal.processingError = error.message;
+        signal.processingUpdatedAt = new Date().toISOString();
+        store.upsertSignal(signal);
+      }
+      console.error(`[signal-processing] ${signalId} failed: ${error.message}`);
+    });
+  return processingChain;
+}
+
+async function finalizeSignalProcessing(signalId) {
+  const signal = store.getSignal(signalId);
+  if (!signal) {
+    return null;
+  }
+
+  signal.processingState = "processing";
+  signal.processingError = "";
+  signal.processingUpdatedAt = new Date().toISOString();
+  store.upsertSignal(signal);
+
+  const runtimeSettings = getRuntimeSettings();
+  if (signal.sourceType === "analyst") {
+    const aiAnalysis = await createAiReviewer(runtimeSettings).review(signal);
+    if (aiAnalysis) {
+      applyAiAnalysis(signal, aiAnalysis);
+      signal.aiCompletedAt = new Date().toISOString();
+    }
+  }
+
+  const deliveryOptions = getSignalDeliveryOptions(signal);
+  signal.deliveryDisplayName = deliveryOptions.displayName || signal.displaySourceName;
+  store.upsertSignal(signal);
+
+  await safeNotifySignal(signal);
+  signal.notifiedAt = new Date().toISOString();
+  signal.processingUpdatedAt = signal.notifiedAt;
+  store.upsertSignal(signal);
+
+  if (signal.executionStatus === "ready_for_execution") {
+    signal.processingState = "executing";
+    store.upsertSignal(signal);
+    const executionResult = await executeSignal(signal, "auto");
+    const latestSignal = store.getSignal(signalId) || signal;
+    latestSignal.processingState =
+      executionResult.status === "failed" ? "completed_with_errors" : "completed";
+    latestSignal.processingUpdatedAt = new Date().toISOString();
+    store.upsertSignal(latestSignal);
+    return latestSignal;
+  }
+
+  signal.processingState = "completed";
+  signal.processingUpdatedAt = new Date().toISOString();
+  store.upsertSignal(signal);
+  return signal;
+}
+
 async function executeSignal(signal, trigger) {
   const runtimeSettings = getRuntimeSettings();
   const gateClient = createGateClient(runtimeSettings);
@@ -627,30 +692,18 @@ async function executeSignal(signal, trigger) {
 }
 
 async function processBaseSignal(baseSignal) {
-  const runtimeSettings = getRuntimeSettings();
   const evaluation = evaluateSignal(baseSignal, playbooks, config, store);
   if (evaluation.skipped) {
     return { skipped: true, reason: evaluation.reason };
   }
 
   const { signal } = evaluation;
-  if (signal.sourceType === "analyst") {
-    const aiAnalysis = await createAiReviewer(runtimeSettings).review(signal);
-    if (aiAnalysis) {
-      applyAiAnalysis(signal, aiAnalysis);
-    }
-  }
-  const deliveryOptions = getSignalDeliveryOptions(signal);
-  signal.deliveryDisplayName = deliveryOptions.displayName || signal.displaySourceName;
+  signal.processingState = "queued";
+  signal.processingError = "";
+  signal.processingUpdatedAt = new Date().toISOString();
   store.upsertSignal(signal);
-  await safeNotifySignal(signal);
-
-  if (signal.executionStatus === "ready_for_execution") {
-    const executionResult = await executeSignal(signal, "auto");
-    return { skipped: false, signal, executionResult };
-  }
-
-  return { skipped: false, signal };
+  void enqueueSignalProcessing(signal.id);
+  return { skipped: false, queued: true, signal };
 }
 
 async function processTelegramUpdate(update) {

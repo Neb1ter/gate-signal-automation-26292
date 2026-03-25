@@ -706,6 +706,91 @@ function buildStructuredSummaryV3(analysis) {
   return lines.join("\n");
 }
 
+function roundProtectionPrice(value) {
+  const numeric = toNumber(value);
+  if (numeric === null) {
+    return null;
+  }
+  if (numeric >= 1000) {
+    return Number(numeric.toFixed(2));
+  }
+  if (numeric >= 1) {
+    return Number(numeric.toFixed(4));
+  }
+  return Number(numeric.toFixed(6));
+}
+
+function getReferenceEntryPrice(analysis) {
+  if (toNumber(analysis?.suggestedEntryPrice) !== null) {
+    return toNumber(analysis.suggestedEntryPrice);
+  }
+  if (analysis?.entryLow !== null && analysis?.entryHigh !== null) {
+    return (Number(analysis.entryLow) + Number(analysis.entryHigh)) / 2;
+  }
+  if (analysis?.entryLow !== null) {
+    return Number(analysis.entryLow);
+  }
+  if (analysis?.entryHigh !== null) {
+    return Number(analysis.entryHigh);
+  }
+  return null;
+}
+
+function deriveProtectionPlan(analysis, side, leverage) {
+  const explicitStopLoss = toNumber(analysis?.stopLoss);
+  const explicitTakeProfits = (analysis?.takeProfits || [])
+    .map((value) => toNumber(value))
+    .filter((value) => value !== null);
+
+  if (explicitStopLoss !== null || explicitTakeProfits.length) {
+    return {
+      source: "analyst",
+      stopLoss: explicitStopLoss,
+      takeProfits: explicitTakeProfits.map((value) => roundProtectionPrice(value)),
+      entryReference: getReferenceEntryPrice(analysis),
+      riskRewardTarget: explicitStopLoss !== null && explicitTakeProfits.length ? "analyst_defined" : "",
+    };
+  }
+
+  const entryReference = getReferenceEntryPrice(analysis);
+  if (entryReference === null || !["buy", "sell"].includes(String(side || "").toLowerCase())) {
+    return {
+      source: "none",
+      stopLoss: null,
+      takeProfits: [],
+      entryReference,
+      riskRewardTarget: "",
+    };
+  }
+
+  const numericLeverage = clamp(
+    Number.parseInt(String(leverage || "").replace(/x$/i, ""), 10) || 20,
+    1,
+    100,
+  );
+  const stopDistancePct =
+    numericLeverage >= 50 ? 0.006 : numericLeverage >= 20 ? 0.01 : numericLeverage >= 10 ? 0.015 : 0.02;
+
+  const isLong = String(side).toLowerCase() === "buy";
+  const stopLoss = roundProtectionPrice(
+    isLong ? entryReference * (1 - stopDistancePct) : entryReference * (1 + stopDistancePct),
+  );
+  const takeProfit1 = roundProtectionPrice(
+    isLong ? entryReference * (1 + stopDistancePct * 1.5) : entryReference * (1 - stopDistancePct * 1.5),
+  );
+  const takeProfit2 = roundProtectionPrice(
+    isLong ? entryReference * (1 + stopDistancePct * 2.5) : entryReference * (1 - stopDistancePct * 2.5),
+  );
+
+  return {
+    source: "system_default",
+    stopLoss,
+    takeProfits: [takeProfit1, takeProfit2].filter((value) => value !== null),
+    entryReference: roundProtectionPrice(entryReference),
+    riskRewardTarget: "1:1.5/1:2.5",
+  };
+}
+
 function buildTradeIdeaV2(baseSignal, analysis, selectedPlaybook, analystConfig = {}) {
   if (!analysis?.actionable || !analysis.symbol) {
     return null;
@@ -719,6 +804,8 @@ function buildTradeIdeaV2(baseSignal, analysis, selectedPlaybook, analystConfig 
 
   const orderType =
     analysis.orderType || (String(defaults.kind || "").includes("limit") ? "limit" : "market");
+  const normalizedLeverage = String(analysis.leverage || defaults.leverage || "20").replace(/x$/i, "");
+  const protectionPlan = deriveProtectionPlan(analysis, side, normalizedLeverage);
   const tradeIdea = {
     kind: orderType === "limit" ? "futures_limit" : "futures_market",
     symbol: analysis.symbol,
@@ -728,8 +815,9 @@ function buildTradeIdeaV2(baseSignal, analysis, selectedPlaybook, analystConfig 
     orderType,
     timeInForce: defaults.timeInForce || (orderType === "limit" ? "gtc" : "ioc"),
     account: defaults.account || "futures",
-    leverage: String(analysis.leverage || defaults.leverage || "20").replace(/x$/i, ""),
+    leverage: normalizedLeverage,
     clientOrderId: `t-analyst-${Date.now().toString().slice(-8)}`,
+    protectionPlan,
   };
 
   if (analysis.suggestedContracts) {
@@ -752,11 +840,11 @@ function buildTradeIdeaV2(baseSignal, analysis, selectedPlaybook, analystConfig 
   if (analysis.entryText) {
     detailParts.push(`入场 ${analysis.entryText}`);
   }
-  if (analysis.stopLoss !== null) {
-    detailParts.push(`止损 ${analysis.stopLoss}`);
+  if (protectionPlan.stopLoss !== null) {
+    detailParts.push(`止损 ${protectionPlan.stopLoss}`);
   }
-  if (analysis.takeProfits?.length) {
-    detailParts.push(`止盈 ${analysis.takeProfits.join("/")}`);
+  if (protectionPlan.takeProfits?.length) {
+    detailParts.push(`止盈 ${protectionPlan.takeProfits.join("/")}`);
   }
 
   tradeIdea.summary = `${side === "buy" ? "合约做多" : "合约做空"} ${tradeIdea.symbol}，${amountText}${
@@ -783,6 +871,7 @@ function buildPlaybookTradeIdeaV2(playbook, asset, analysis) {
     analysis?.orderType || action.orderType || (String(action.kind || "").includes("limit") ? "limit" : "market");
   action.kind = action.orderType === "limit" ? "futures_limit" : "futures_market";
   action.leverage = String(analysis?.leverage || action.leverage || "20").replace(/x$/i, "");
+  action.protectionPlan = deriveProtectionPlan(analysis, action.side, action.leverage);
 
   if (analysis?.direction && ["buy", "sell"].includes(analysis.direction)) {
     action.side = analysis.direction;
@@ -811,11 +900,11 @@ function buildPlaybookTradeIdeaV2(playbook, asset, analysis) {
   if (analysis?.entryText) {
     detailParts.push(`入场 ${analysis.entryText}`);
   }
-  if (analysis?.stopLoss != null) {
-    detailParts.push(`止损 ${analysis.stopLoss}`);
+  if (action.protectionPlan?.stopLoss != null) {
+    detailParts.push(`止损 ${action.protectionPlan.stopLoss}`);
   }
-  if (analysis?.takeProfits?.length) {
-    detailParts.push(`止盈 ${analysis.takeProfits.join("/")}`);
+  if (action.protectionPlan?.takeProfits?.length) {
+    detailParts.push(`止盈 ${action.protectionPlan.takeProfits.join("/")}`);
   }
 
   action.summary = `${action.side === "buy" ? "合约做多" : "合约做空"} ${action.symbol}，${amountSummary}${
@@ -1229,6 +1318,7 @@ export function applyAiAnalysis(signal, aiAnalysis) {
       price: rebuilt?.price || signal.tradeIdea.price,
       marginQuote: rebuilt?.marginQuote || signal.tradeIdea.marginQuote,
       size: rebuilt?.size || signal.tradeIdea.size,
+      protectionPlan: rebuilt?.protectionPlan || signal.tradeIdea.protectionPlan,
       summary: rebuilt?.summary || signal.tradeIdea.summary,
     };
   }

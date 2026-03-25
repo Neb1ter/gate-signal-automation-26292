@@ -47,7 +47,7 @@ function truncateText(text, limit = 3500) {
   if (value.length <= limit) {
     return value;
   }
-  return `${value.slice(0, Math.max(0, limit - 10))}\n\n[内容已截断]`;
+  return `${value.slice(0, Math.max(0, limit - 12))}\n\n[内容已截断]`;
 }
 
 function escapeMarkdown(value) {
@@ -84,6 +84,33 @@ function formatSignalAsset(signal) {
   return "未识别标的";
 }
 
+function getReadableExecutionReason(signal) {
+  if (signal.sourceType === "analyst") {
+    if (signal.executionStatus === "pending_approval") {
+      return signal.tradeIdea
+        ? "AI 已整理出结构化交易建议，等待你确认是否跟单。"
+        : "AI 已完成结构化摘要，但暂未形成可直接执行的订单。";
+    }
+    if (signal.executionStatus === "notify_only") {
+      return "这条分析暂时只做提醒，不会自动下单。";
+    }
+  }
+
+  if (signal.sourceType === "news") {
+    if (signal.executionStatus === "ready_for_execution") {
+      return "这条新闻已命中自动交易条件，系统会继续执行。";
+    }
+    if (signal.executionStatus === "blocked_risk") {
+      return "这条新闻命中了策略，但被风控规则拦截。";
+    }
+    if (signal.executionStatus === "pending_approval") {
+      return "当前新闻模式是手动确认，等待你决定是否执行。";
+    }
+  }
+
+  return String(signal.executionReason || "").trim() || "等待处理。";
+}
+
 function buildSignalTitle(signal, displaySource) {
   if (signal.sourceType !== "analyst") {
     return signal.tradeIdea?.symbol
@@ -109,7 +136,8 @@ function buildSignalHeadline(signal) {
           : signal.sourceType === "news"
             ? "快讯"
             : "提醒";
-  return `# ${escapeMarkdown(asset)} ${escapeMarkdown(direction)}${escapeMarkdown(typeLabel)}`;
+
+  return `# ${escapeMarkdown(asset)} ${escapeMarkdown(direction)}｜${escapeMarkdown(typeLabel)}`;
 }
 
 function pickSignalTemplate(signal) {
@@ -123,30 +151,66 @@ function pickSignalTemplate(signal) {
   return signal.sourceType === "analyst" ? "blue" : "turquoise";
 }
 
+function buildProtectionLine(signal) {
+  const protectionPlan = signal.tradeIdea?.protectionPlan || {};
+  const stopLoss = protectionPlan.stopLoss ?? signal.analysis?.stopLoss;
+  const takeProfits =
+    protectionPlan.takeProfits ||
+    (Array.isArray(signal.analysis?.takeProfits) ? signal.analysis.takeProfits : []);
+  const riskReward = protectionPlan.riskRewardTarget;
+  const parts = [];
+  if (stopLoss) {
+    parts.push(`止损 ${stopLoss}`);
+  }
+  if (takeProfits?.length) {
+    parts.push(`止盈 ${takeProfits.join(" / ")}`);
+  }
+  if (riskReward) {
+    parts.push(`盈亏比 ${riskReward}`);
+  }
+  return parts.join(" ｜ ");
+}
+
 function buildSignalContent(signal, options = {}) {
   const needsDecision = signal.executionStatus === "pending_approval";
   const displaySource = getDisplaySource(signal, options);
+  const keyTakeaway =
+    signal.tradeIdea?.summary ||
+    signal.analysis?.normalizedSummary?.split("\n").find(Boolean) ||
+    getReadableExecutionReason(signal) ||
+    "这是一条新的结构化交易提醒。";
+  const protectionLine = buildProtectionLine(signal);
+
   const summaryLines = [
     `- **来源分组**：${escapeMarkdown(displaySource)}`,
     `- **类型**：${escapeMarkdown(formatSignalType(signal.sourceType))}`,
-    `- **评分**：${escapeMarkdown(Number(signal.score || 0).toFixed(2))}`,
     `- **当前状态**：${escapeMarkdown(formatExecutionStatus(signal.executionStatus))}`,
+    `- **评分**：${escapeMarkdown(Number(signal.score || 0).toFixed(2))}`,
     `- **命中策略**：${escapeMarkdown(signal.matchedPlaybookIds?.join("、") || "无")}`,
-    `- **交易建议**：${escapeMarkdown(signal.tradeIdea?.summary || "暂未生成可执行订单")}`,
+    `- **AI 建议**：${escapeMarkdown(signal.tradeIdea?.summary || "暂未形成可执行订单")}`,
   ];
 
-  if (signal.executionReason) {
-    summaryLines.push(`- **说明**：${escapeMarkdown(signal.executionReason)}`);
+  if (protectionLine) {
+    summaryLines.push(`- **保护计划**：${escapeMarkdown(protectionLine)}`);
   }
+  summaryLines.push(`- **说明**：${escapeMarkdown(getReadableExecutionReason(signal))}`);
 
-  const sections = [buildSignalHeadline(signal), "", "## 策略总览", ...summaryLines];
+  const sections = [
+    buildSignalHeadline(signal),
+    "",
+    "## 重点结论",
+    `**${escapeMarkdown(keyTakeaway)}**`,
+    "",
+    "## 策略总览",
+    ...summaryLines,
+  ];
 
   if (signal.analysis?.normalizedSummary) {
     const structuredLines = String(signal.analysis.normalizedSummary)
       .split("\n")
       .filter(Boolean)
       .map((line) => `- ${escapeMarkdown(line)}`);
-    sections.push("", "## 结构化摘要", ...structuredLines);
+    sections.push("", "## 结构化分析", ...structuredLines);
   }
 
   const body = getDisplayText(signal);
@@ -159,7 +223,7 @@ function buildSignalContent(signal, options = {}) {
   }
 
   if (needsDecision) {
-    sections.push("", "## 操作建议", "_点按钮进入中文决策页，再决定是否跟单。_");
+    sections.push("", "## 操作建议", "_点击下方按钮进入中文决策面板，再决定是否跟单。_");
   }
 
   return sections.join("\n");
@@ -167,14 +231,26 @@ function buildSignalContent(signal, options = {}) {
 
 function buildExecutionContent(signal, result, options = {}) {
   const displaySource = getDisplaySource(signal, options);
-  return [
+  const details = [
     `# ${escapeMarkdown(formatSignalAsset(signal))} 执行结果`,
     "",
     `- **信号 ID**：${escapeMarkdown(signal.id)}`,
     `- **来源分组**：${escapeMarkdown(displaySource)}`,
     `- **执行状态**：${escapeMarkdown(formatResultStatus(result.status))}`,
     `- **结果说明**：${escapeMarkdown(result.message || "无")}`,
-  ].join("\n");
+  ];
+
+  if (result.orderId) {
+    details.push(`- **订单号**：${escapeMarkdown(result.orderId)}`);
+  }
+  if (result.avgPrice) {
+    details.push(`- **成交均价**：${escapeMarkdown(result.avgPrice)}`);
+  }
+  if (result.filledSize) {
+    details.push(`- **成交数量**：${escapeMarkdown(result.filledSize)}`);
+  }
+
+  return details.join("\n");
 }
 
 function buildLegacyPayload({ title, content, buttonUrl = "", buttonText = "" }) {

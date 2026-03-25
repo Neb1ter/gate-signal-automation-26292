@@ -7,13 +7,13 @@ import { renderAdminPage } from "./admin-page.mjs";
 import { config, ensureRuntimeDirs, loadPlaybooks } from "./config.mjs";
 import { FeishuNotifier } from "./feishu.mjs";
 import { GateSpotClient } from "./gate-api.mjs";
+import { renderSignalReviewPage } from "./signal-review-page.mjs";
 import {
   applyAiAnalysis,
   buildAnalystPrivacyAlias,
   createSignalFromPayload,
   createSignalFromTelegramMessage,
   evaluateSignal,
-  renderSignalReviewPage,
 } from "./signal-engine.mjs";
 import { JsonStore } from "./storage.mjs";
 import { createTelegramSource } from "./telegram.mjs";
@@ -448,6 +448,10 @@ function renderActionResultPage(title, summary, result) {
       h1 { margin-top: 0; }
       p { line-height: 1.6; }
       pre { white-space: pre-wrap; word-break: break-word; background: #f7f9fc; padding: 12px; border-radius: 10px; border: 1px solid #e3e9f3; }
+      @media (max-width: 720px) {
+        body { padding: 12px; }
+        .card { padding: 16px; border-radius: 14px; }
+      }
     </style>
   </head>
   <body>

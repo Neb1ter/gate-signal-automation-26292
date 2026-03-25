@@ -110,10 +110,18 @@ export const config = {
   },
   ai: {
     enabled: parseBoolean(process.env.AI_REVIEW_ENABLED, false),
-    apiKey: process.env.AI_API_KEY || process.env.OPENAI_API_KEY || "",
-    baseUrl: process.env.AI_API_BASE_URL || "https://api.openai.com/v1",
-    model: process.env.AI_MODEL || "",
-    timeoutMs: parseInteger(process.env.AI_TIMEOUT_MS, 10000),
+    provider: process.env.AI_PROVIDER || "dashscope",
+    apiKey:
+      process.env.AI_API_KEY ||
+      process.env.DASHSCOPE_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      "",
+    baseUrl:
+      process.env.AI_API_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    primaryModel: process.env.AI_PRIMARY_MODEL || process.env.AI_MODEL || "qwen3.5-plus",
+    reviewModel: process.env.AI_REVIEW_MODEL || "deepseek-v3.2",
+    reviewEnabled: parseBoolean(process.env.AI_REVIEW_SECOND_PASS_ENABLED, true),
+    timeoutMs: parseInteger(process.env.AI_TIMEOUT_MS, 15000),
   },
   gate: {
     apiKey: process.env.GATE_API_KEY || "",

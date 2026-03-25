@@ -64,10 +64,24 @@ function normalizeAiSettings(value, defaults = {}) {
   const source = value || {};
   return {
     enabled: source.enabled === undefined ? Boolean(defaults.enabled) : Boolean(source.enabled),
+    provider: String(source.provider ?? defaults.provider ?? "dashscope").trim() || "dashscope",
     apiKey: String(source.apiKey ?? defaults.apiKey ?? "").trim(),
-    baseUrl: String(source.baseUrl ?? defaults.baseUrl ?? "").trim(),
-    model: String(source.model ?? defaults.model ?? "").trim(),
-    timeoutMs: Number(source.timeoutMs ?? defaults.timeoutMs ?? 10000) || 10000,
+    baseUrl:
+      String(
+        source.baseUrl ??
+          defaults.baseUrl ??
+          "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      ).trim() || "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    primaryModel:
+      String(source.primaryModel ?? source.model ?? defaults.primaryModel ?? defaults.model ?? "")
+        .trim() || "qwen3.5-plus",
+    reviewModel:
+      String(source.reviewModel ?? defaults.reviewModel ?? "").trim() || "deepseek-v3.2",
+    reviewEnabled:
+      source.reviewEnabled === undefined
+        ? defaults.reviewEnabled !== false
+        : Boolean(source.reviewEnabled),
+    timeoutMs: Number(source.timeoutMs ?? defaults.timeoutMs ?? 15000) || 15000,
   };
 }
 

@@ -63,9 +63,12 @@ const defaultRuntimeSettings = {
   },
   ai: {
     enabled: config.ai.enabled,
+    provider: config.ai.provider,
     apiKey: config.ai.apiKey,
     baseUrl: config.ai.baseUrl,
-    model: config.ai.model,
+    primaryModel: config.ai.primaryModel,
+    reviewModel: config.ai.reviewModel,
+    reviewEnabled: config.ai.reviewEnabled,
     timeoutMs: config.ai.timeoutMs,
   },
   gate: {

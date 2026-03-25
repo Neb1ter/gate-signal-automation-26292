@@ -550,8 +550,19 @@ function buildStructuredSummary(analysis) {
   if (analysis.complianceComment) {
     lines.push(`AI 规范建议：${analysis.complianceComment}`);
   }
+  if (analysis.automationReady !== undefined) {
+    lines.push(`AI 自动化判断：${analysis.automationReady ? "适合自动执行" : "建议继续人工确认"}`);
+  }
+  if (analysis.automationComment) {
+    lines.push(`AI 自动化备注：${analysis.automationComment}`);
+  }
   if (analysis.riskFlags?.length) {
     lines.push(`提醒：${analysis.riskFlags.join("；")}`);
+  }
+  if (analysis.primaryModel || analysis.reviewModel) {
+    lines.push(
+      `AI 模型链路：${[analysis.primaryModel, analysis.reviewModel].filter(Boolean).join(" -> ")}`,
+    );
   }
 
   return lines.join("\n");
@@ -1165,6 +1176,9 @@ export function applyAiAnalysis(signal, aiAnalysis) {
   const nextAnalysis = {
     ...signal.analysis,
     parser: aiAnalysis.parser || "ai-review",
+    provider: aiAnalysis.provider || signal.analysis.provider,
+    primaryModel: aiAnalysis.primaryModel || signal.analysis.primaryModel,
+    reviewModel: aiAnalysis.reviewModel || signal.analysis.reviewModel,
     messageType: aiAnalysis.messageType || signal.analysis.messageType,
     asset: aiAnalysis.asset || signal.analysis.asset,
     symbol: aiAnalysis.symbol || signal.analysis.symbol,
@@ -1190,6 +1204,10 @@ export function applyAiAnalysis(signal, aiAnalysis) {
         signal.analysis.actionable ??
         ((aiAnalysis.asset || signal.analysis.asset) && (aiAnalysis.direction || signal.analysis.direction)),
     ),
+    automationReady:
+      aiAnalysis.automationReady ?? signal.analysis.automationReady ?? undefined,
+    automationComment:
+      aiAnalysis.automationComment || signal.analysis.automationComment || "",
     complianceComment: aiAnalysis.complianceComment || signal.analysis.complianceComment || "",
     riskFlags: unique([...(signal.analysis.riskFlags || []), ...(aiAnalysis.riskFlags || [])]),
   };

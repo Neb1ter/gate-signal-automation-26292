@@ -154,6 +154,105 @@ const COMMENTARY_KEYWORDS = [
   "rsi",
 ];
 
+const RETROSPECTIVE_ONLY_PATTERNS = [
+  /复盘/,
+  /回顾/,
+  /回看/,
+  /战绩/,
+  /记录/,
+  /盈利/,
+  /止盈到了/,
+  /已经涨/,
+  /已经跌/,
+  /提前.*提示/,
+  /早盘.*提示/,
+  /昨天.*提示/,
+  /今天.*提示/,
+  /之前.*提示/,
+  /之前说过/,
+  /我说过/,
+  /还记得/,
+  /恭喜/,
+  /看到没/,
+  /看到了吗/,
+  /拿住了/,
+  /坚持持有/,
+  /大暴涨/,
+  /暴涨了/,
+  /吃肉/,
+  /炫耀/,
+  /牛回速归/,
+  /review of past/i,
+  /recap/i,
+  /called it/i,
+  /as expected/i,
+  /already pumped/i,
+];
+
+const FORWARD_LOOKING_PATTERNS = [
+  /可以.*做多/,
+  /可以.*做空/,
+  /继续.*做多/,
+  /继续.*做空/,
+  /准备.*做多/,
+  /准备.*做空/,
+  /考虑.*做多/,
+  /考虑.*做空/,
+  /回踩.*做多/,
+  /反弹.*做空/,
+  /到.*做多/,
+  /到.*做空/,
+  /挂单/,
+  /进场/,
+  /入场/,
+  /建仓/,
+  /开多/,
+  /开空/,
+  /买入/,
+  /卖出/,
+  /止损放/,
+  /止盈看/,
+  /if .* then .*long/i,
+  /if .* then .*short/i,
+  /entry/i,
+  /enter/i,
+];
+
+function hasRetrospectiveOnlyTone(text) {
+  const source = String(text || "");
+  return RETROSPECTIVE_ONLY_PATTERNS.some((pattern) => pattern.test(source));
+}
+
+function hasForwardLookingInstruction(text) {
+  const source = String(text || "");
+  return FORWARD_LOOKING_PATTERNS.some((pattern) => pattern.test(source));
+}
+
+function classifyRetrospectiveSignal(text, analysis = {}) {
+  const source = String(text || "");
+  const messageType = String(analysis.messageType || "").toLowerCase();
+  const contentNature = String(analysis.contentNature || "").toLowerCase();
+  const executionIntent = String(analysis.executionIntent || "").toLowerCase();
+  const retrospectiveByTone = hasRetrospectiveOnlyTone(source);
+  const forwardByTone = hasForwardLookingInstruction(source);
+  const retrospectiveByAi = ["review", "boast"].includes(messageType) ||
+    ["retrospective_review", "performance_brag"].includes(contentNature);
+  const forwardByAi = ["enter", "scale_in", "reduce", "exit", "hedge", "cancel", "protect"].includes(
+    executionIntent,
+  );
+
+  const retrospectiveOnly =
+    (retrospectiveByTone || retrospectiveByAi) && !(forwardByTone || forwardByAi);
+
+  return {
+    retrospectiveOnly,
+    retrospectiveByTone,
+    retrospectiveByAi,
+    forwardByTone,
+    forwardByAi,
+  };
+}
+
 function findFirstKeywordIndex(text, keywords) {
   const haystack = String(text || "").toLowerCase();
   let best = -1;
@@ -428,6 +527,9 @@ function inferConfidence(text) {
 }
 
 function inferMessageType(text, direction, asset) {
+  if (hasRetrospectiveOnlyTone(text) && !hasForwardLookingInstruction(text)) {
+    return /恭喜|战绩|暴涨|吃肉|看到没/.test(String(text || "")) ? "boast" : "review";
+  }
   if (direction.side && asset) {
     return "strategy";
   }
@@ -454,6 +556,7 @@ function buildStructuredStrategy(text, sourceType) {
   const timeframe = inferTimeframe(text);
   const confidence = inferConfidence(text);
   const messageType = inferMessageType(text, direction, asset);
+  const retrospectiveCheck = classifyRetrospectiveSignal(text, { messageType });
 
   const riskFlags = [];
   if (direction.side === "sell" && sourceType === "analyst") {
@@ -467,29 +570,45 @@ function buildStructuredStrategy(text, sourceType) {
   }
 
   const symbol = pair || (asset ? `${asset}_USDT` : "");
-  const actionable = Boolean(asset && direction.side);
+  const actionable = retrospectiveCheck.retrospectiveOnly ? false : Boolean(asset && direction.side);
 
   return {
     parser: "heuristic-v2",
     messageType,
-    asset,
-    symbol,
-    direction: direction.side,
-    directionLabel: direction.label,
-    entryText: entry?.text || "",
-    entryLow: entry?.low ?? null,
-    entryHigh: entry?.high ?? null,
-    stopLoss,
-    takeProfits,
+    contentNature: retrospectiveCheck.retrospectiveOnly
+      ? messageType === "boast"
+        ? "performance_brag"
+        : "retrospective_review"
+      : messageType === "strategy"
+        ? "forward_strategy"
+        : messageType === "analysis"
+          ? "market_commentary"
+          : messageType === "watchlist"
+            ? "risk_notice"
+            : "unclear",
+    asset: retrospectiveCheck.retrospectiveOnly ? "" : asset,
+    symbol: retrospectiveCheck.retrospectiveOnly ? "" : symbol,
+    direction: retrospectiveCheck.retrospectiveOnly ? "" : direction.side,
+    directionLabel: retrospectiveCheck.retrospectiveOnly
+      ? "回顾 / 炫耀，不构成新策略"
+      : direction.label,
+    entryText: retrospectiveCheck.retrospectiveOnly ? "" : entry?.text || "",
+    entryLow: retrospectiveCheck.retrospectiveOnly ? null : entry?.low ?? null,
+    entryHigh: retrospectiveCheck.retrospectiveOnly ? null : entry?.high ?? null,
+    stopLoss: retrospectiveCheck.retrospectiveOnly ? null : stopLoss,
+    takeProfits: retrospectiveCheck.retrospectiveOnly ? [] : takeProfits,
     leverage,
-    orderType,
-    suggestedEntryPrice: getDefaultEntryPrice(entry),
-    suggestedMarginQuote,
-    suggestedContracts,
+    orderType: retrospectiveCheck.retrospectiveOnly ? "" : orderType,
+    suggestedEntryPrice: retrospectiveCheck.retrospectiveOnly ? "" : getDefaultEntryPrice(entry),
+    suggestedMarginQuote: retrospectiveCheck.retrospectiveOnly ? "" : suggestedMarginQuote,
+    suggestedContracts: retrospectiveCheck.retrospectiveOnly ? "" : suggestedContracts,
     timeframe,
     confidence,
     actionable,
-    riskFlags,
+    executionIntent: retrospectiveCheck.retrospectiveOnly ? "wait" : "",
+    riskFlags: retrospectiveCheck.retrospectiveOnly
+      ? unique([...riskFlags, "retrospective recap", "not a fresh trade signal"])
+      : riskFlags,
     normalizedSummary: "",
     complianceComment: "",
   };
@@ -778,6 +897,67 @@ function formatTakeProfitsForDisplay(analysis) {
     return "未给出";
   }
   return analysis.takeProfits.join(" / ");
+}
+
+function buildStructuredSummarySafe(analysis) {
+  if (!analysis) {
+    return "";
+  }
+
+  const messageTypeMap = {
+    strategy: "交易策略",
+    analysis: "行情分析",
+    review: "回顾复盘",
+    boast: "战绩展示",
+    watchlist: "观察提醒",
+    brief: "普通转发",
+  };
+
+  const lines = [
+    `文案类型：${messageTypeMap[analysis.messageType] || "普通转发"}`,
+    `币种：${analysis.asset || "未识别"}`,
+    `方向：${analysis.directionLabel || "未识别"}`,
+    `入场：${analysis.entryText || "未给出"}`,
+    `止损：${analysis.stopLoss ?? "未给出"}`,
+    `止盈：${analysis.takeProfits?.length ? analysis.takeProfits.join(" / ") : "未给出"}`,
+    `周期：${analysis.timeframe || "未提及"}`,
+    `信号强度：${analysis.confidence || "中"}`,
+  ];
+
+  if (analysis.semanticSummary) {
+    lines.unshift(`语义判断：${analysis.semanticSummary}`);
+  }
+  if (analysis.executionIntent) {
+    lines.push(`执行意图：${analysis.executionIntent}`);
+  }
+  if (analysis.contentNature) {
+    lines.push(`内容性质：${analysis.contentNature}`);
+  }
+  if (analysis.threadAggregationNote) {
+    lines.push(`线程备注：${analysis.threadAggregationNote}`);
+  }
+  if (analysis.leverage) {
+    lines.push(`杠杆：${analysis.leverage}`);
+  }
+  if (analysis.orderType) {
+    lines.push(`下单方式：${analysis.orderType === "limit" ? "限价单" : "市价单"}`);
+  }
+  if (analysis.suggestedEntryPrice) {
+    lines.push(`参考价格：${analysis.suggestedEntryPrice}`);
+  }
+  if (analysis.suggestedContracts) {
+    lines.push(`建议数量：${analysis.suggestedContracts} 张`);
+  } else if (analysis.suggestedMarginQuote) {
+    lines.push(`建议保证金：${analysis.suggestedMarginQuote} USDT`);
+  }
+  if (analysis.complianceComment) {
+    lines.push(`AI 复核备注：${analysis.complianceComment}`);
+  }
+  if (analysis.riskFlags?.length) {
+    lines.push(`风险提示：${analysis.riskFlags.join("；")}`);
+  }
+
+  return lines.join("\n");
 }
 
 function roundProtectionPrice(value) {
@@ -1245,7 +1425,7 @@ export function evaluateSignal(baseSignal, playbooks, config, store) {
       ? buildStructuredStrategy(baseSignal.text, baseSignal.sourceType)
       : null;
   if (analysis) {
-    analysis.normalizedSummary = buildStructuredSummaryV4(analysis);
+    analysis.normalizedSummary = buildStructuredSummarySafe(analysis);
   }
 
   const score = scoreSignal(baseSignal.text, matched.length, baseSignal.sourceType, analysis);
@@ -1366,6 +1546,7 @@ export function applyAiAnalysis(signal, aiAnalysis) {
     semanticSummary: aiAnalysis.semanticSummary || signal.analysis.semanticSummary || "",
     executionIntent: aiAnalysis.executionIntent || signal.analysis.executionIntent || "",
     messageType: aiAnalysis.messageType || signal.analysis.messageType,
+    contentNature: aiAnalysis.contentNature || signal.analysis.contentNature || "",
     asset: aiAnalysis.asset || signal.analysis.asset,
     symbol: aiAnalysis.symbol || signal.analysis.symbol,
     direction: aiAnalysis.direction || signal.analysis.direction,
@@ -1400,10 +1581,44 @@ export function applyAiAnalysis(signal, aiAnalysis) {
     riskFlags: unique([...(signal.analysis.riskFlags || []), ...(aiAnalysis.riskFlags || [])]),
   };
 
-  nextAnalysis.normalizedSummary = buildStructuredSummaryV4(nextAnalysis);
+  const retrospectiveCheck = classifyRetrospectiveSignal(signal.text, nextAnalysis);
+  if (retrospectiveCheck.retrospectiveOnly) {
+    nextAnalysis.messageType = nextAnalysis.messageType === "boast" ? "boast" : "review";
+    nextAnalysis.contentNature =
+      nextAnalysis.messageType === "boast" ? "performance_brag" : "retrospective_review";
+    nextAnalysis.actionable = false;
+    nextAnalysis.automationReady = false;
+    nextAnalysis.executionIntent = "wait";
+    nextAnalysis.direction = "";
+    nextAnalysis.directionLabel = "回顾 / 炫耀，不构成新策略";
+    nextAnalysis.asset = "";
+    nextAnalysis.symbol = "";
+    nextAnalysis.entryText = "";
+    nextAnalysis.entryLow = null;
+    nextAnalysis.entryHigh = null;
+    nextAnalysis.stopLoss = null;
+    nextAnalysis.takeProfits = [];
+    nextAnalysis.orderType = "";
+    nextAnalysis.suggestedEntryPrice = "";
+    nextAnalysis.suggestedMarginQuote = "";
+    nextAnalysis.suggestedContracts = "";
+    nextAnalysis.automationComment =
+      "AI 判断这条内容主要是在回顾过往战绩或炫耀结果，不是新的前瞻性交易指令。";
+    nextAnalysis.complianceComment =
+      "已降级为回顾类内容，只做转发与留档，不生成可执行跟单建议。";
+    nextAnalysis.riskFlags = unique([
+      ...nextAnalysis.riskFlags,
+      "retrospective recap",
+      "not a fresh trade signal",
+    ]);
+  }
+
+  nextAnalysis.normalizedSummary = buildStructuredSummarySafe(nextAnalysis);
   signal.analysis = nextAnalysis;
 
-  if (!signal.tradeIdea) {
+  if (retrospectiveCheck.retrospectiveOnly) {
+    signal.tradeIdea = null;
+  } else if (!signal.tradeIdea) {
     signal.tradeIdea = buildTradeIdeaV2(signal, nextAnalysis, null);
   } else if (nextAnalysis.symbol || nextAnalysis.direction) {
     const rebuilt = buildTradeIdeaV2(signal, nextAnalysis, null);
@@ -1435,6 +1650,15 @@ export function applyAiAnalysis(signal, aiAnalysis) {
       : "AI 已补充结构化摘要，但仍未形成可执行下单参数";
   }
 
+  if (signal.sourceType === "analyst") {
+    signal.executionStatus = "pending_approval";
+    signal.executionReason = signal.tradeIdea
+      ? "AI 已补充结构化交易建议，等待你确认是否跟单"
+      : retrospectiveCheck.retrospectiveOnly
+        ? "AI 已判断这条内容属于回顾战绩或炫耀，不会生成新的可执行交易建议"
+        : "AI 已补充结构化摘要，但暂未形成可执行下单参数";
+  }
+
   return signal;
 }
 
@@ -1449,6 +1673,8 @@ function hasBlockingAiRiskFlags(analysis) {
       "missing direction",
       "review failed",
       "fallback",
+      "retrospective recap",
+      "not a fresh trade signal",
     ].some((keyword) => flag.includes(keyword)),
   );
 }
@@ -1457,10 +1683,17 @@ export function isAnalystAiTradeCandidate(signal) {
   const analysis = signal?.analysis || {};
   const tradeIdea = signal?.tradeIdea || {};
   const messageType = String(analysis.messageType || "").toLowerCase();
+  const contentNature = String(analysis.contentNature || "").toLowerCase();
   const executionIntent = String(analysis.executionIntent || "").toLowerCase();
   const semanticTradeIntent = ["enter", "scale_in", "reduce", "exit", "hedge"].includes(
     executionIntent,
   );
+  if (["review", "boast"].includes(messageType)) {
+    return false;
+  }
+  if (["retrospective_review", "performance_brag"].includes(contentNature)) {
+    return false;
+  }
   if (!["strategy", "analysis"].includes(messageType)) {
     return false;
   }

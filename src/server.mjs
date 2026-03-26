@@ -817,13 +817,26 @@ async function executeSignal(signal, trigger) {
 
   try {
     const result = await gateClient.placeTrade(signal.tradeIdea);
+    let protectionOrders = [];
+    let protectionError = "";
+    if (String(signal.tradeIdea.kind || "").startsWith("futures_")) {
+      try {
+        protectionOrders = await gateClient.placeFuturesProtectionOrders(signal.tradeIdea);
+      } catch (error) {
+        protectionError = error.message;
+      }
+    }
     const executionResult = {
       status: gateClient.dryRun ? "dry_run" : "submitted",
       trigger,
       message: gateClient.dryRun
         ? "当前是模拟模式，没有真实下单"
         : "真实订单已提交到 Gate",
-      result,
+      result: {
+        ...result,
+        protectionOrders,
+        protectionError,
+      },
       at: new Date().toISOString(),
     };
 

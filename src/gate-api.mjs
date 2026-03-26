@@ -419,6 +419,110 @@ export class GateSpotClient {
     return this.request("POST", `/futures/${encodeURIComponent(settle)}/orders`, "", body);
   }
 
+  async createFuturesPriceTriggeredOrder({
+    settle = "usdt",
+    contract,
+    triggerPrice,
+    triggerRule,
+    clientOrderId,
+  }) {
+    const normalizedTriggerPrice = trimAmount(triggerPrice);
+    const normalizedTriggerRule =
+      triggerRule === 1 || triggerRule === 2
+        ? triggerRule
+        : String(triggerRule || "") === ">="
+          ? 1
+          : String(triggerRule || "") === "<="
+            ? 2
+            : 0;
+    if (!contract || !normalizedTriggerPrice || ![1, 2].includes(normalizedTriggerRule)) {
+      return null;
+    }
+
+    const body = JSON.stringify({
+      initial: {
+        contract,
+        size: 0,
+        price: "0",
+        close: true,
+        tif: "ioc",
+        text: clientOrderId || `t-protect-${Date.now().toString().slice(-8)}`,
+        reduce_only: true,
+      },
+      trigger: {
+        strategy_type: 0,
+        price_type: 0,
+        price: normalizedTriggerPrice,
+        rule: normalizedTriggerRule,
+        expiration: 86400,
+      },
+    });
+
+    if (this.dryRun) {
+      return {
+        dryRun: true,
+        endpoint: `/futures/${settle}/price_orders`,
+        requestBody: JSON.parse(body),
+      };
+    }
+
+    if (!this.isConfigured()) {
+      throw new Error("Gate API Key / Secret 尚未配置，暂时无法提交保护条件单");
+    }
+
+    return this.request("POST", `/futures/${encodeURIComponent(settle)}/price_orders`, "", body);
+  }
+
+  async placeFuturesProtectionOrders(action) {
+    if (!String(action?.kind || "").startsWith("futures_")) {
+      return [];
+    }
+
+    const protectionPlan = action?.protectionPlan || {};
+    const settle = String(action.settle || "usdt").toLowerCase();
+    const contract = String(action.contract || action.symbol || "").toUpperCase();
+    const side = String(action.side || "").toLowerCase();
+    if (!contract || !["buy", "sell"].includes(side) || action.reduceOnly === true) {
+      return [];
+    }
+
+    const orders = [];
+    const takeProfit = Array.isArray(protectionPlan.takeProfits) ? protectionPlan.takeProfits[0] : null;
+    const stopLoss = protectionPlan.stopLoss ?? null;
+
+    if (takeProfit) {
+      orders.push({
+        type: "take_profit",
+        triggerPrice: takeProfit,
+        triggerRule: side === "buy" ? 1 : 2,
+        request: await this.createFuturesPriceTriggeredOrder({
+          settle,
+          contract,
+          triggerPrice: takeProfit,
+          triggerRule: side === "buy" ? 1 : 2,
+          clientOrderId: `t-tp-${Date.now().toString().slice(-8)}`,
+        }),
+      });
+    }
+
+    if (stopLoss) {
+      orders.push({
+        type: "stop_loss",
+        triggerPrice: stopLoss,
+        triggerRule: side === "buy" ? 2 : 1,
+        request: await this.createFuturesPriceTriggeredOrder({
+          settle,
+          contract,
+          triggerPrice: stopLoss,
+          triggerRule: side === "buy" ? 2 : 1,
+          clientOrderId: `t-sl-${Date.now().toString().slice(-8)}`,
+        }),
+      });
+    }
+
+    return orders;
+  }
+
   async placeTrade(action) {
     if (String(action?.kind || "").startsWith("futures_")) {
       return this.placeFuturesOrder(action);

@@ -815,19 +815,36 @@ function deriveProtectionPlan(analysis, side, leverage) {
   const explicitTakeProfits = (analysis?.takeProfits || [])
     .map((value) => toNumber(value))
     .filter((value) => value !== null);
+  const entryReference = getReferenceEntryPrice(analysis);
+  const normalizedSide = String(side || "").toLowerCase();
+  const isTradeSideSupported = ["buy", "sell"].includes(normalizedSide);
+  const isLong = normalizedSide === "buy";
 
   if (explicitStopLoss !== null || explicitTakeProfits.length) {
+    const fallbackTakeProfit =
+      !explicitTakeProfits.length && entryReference !== null && isTradeSideSupported
+        ? roundProtectionPrice(isLong ? entryReference * 1.02 : entryReference * 0.98)
+        : null;
+
     return {
       source: "analyst",
       stopLoss: explicitStopLoss,
-      takeProfits: explicitTakeProfits.map((value) => roundProtectionPrice(value)),
-      entryReference: getReferenceEntryPrice(analysis),
-      riskRewardTarget: explicitStopLoss !== null && explicitTakeProfits.length ? "analyst_defined" : "",
+      takeProfits: explicitTakeProfits.length
+        ? explicitTakeProfits.map((value) => roundProtectionPrice(value))
+        : fallbackTakeProfit !== null
+          ? [fallbackTakeProfit]
+          : [],
+      entryReference,
+      riskRewardTarget:
+        explicitTakeProfits.length || explicitStopLoss !== null
+          ? "analyst_defined"
+          : fallbackTakeProfit !== null
+            ? "100x_200pct_default_tp"
+            : "",
     };
   }
 
-  const entryReference = getReferenceEntryPrice(analysis);
-  if (entryReference === null || !["buy", "sell"].includes(String(side || "").toLowerCase())) {
+  if (entryReference === null || !isTradeSideSupported) {
     return {
       source: "none",
       stopLoss: null,
@@ -837,31 +854,14 @@ function deriveProtectionPlan(analysis, side, leverage) {
     };
   }
 
-  const numericLeverage = clamp(
-    Number.parseInt(String(leverage || "").replace(/x$/i, ""), 10) || 20,
-    1,
-    100,
-  );
-  const stopDistancePct =
-    numericLeverage >= 50 ? 0.006 : numericLeverage >= 20 ? 0.01 : numericLeverage >= 10 ? 0.015 : 0.02;
-
-  const isLong = String(side).toLowerCase() === "buy";
-  const stopLoss = roundProtectionPrice(
-    isLong ? entryReference * (1 - stopDistancePct) : entryReference * (1 + stopDistancePct),
-  );
-  const takeProfit1 = roundProtectionPrice(
-    isLong ? entryReference * (1 + stopDistancePct * 1.5) : entryReference * (1 - stopDistancePct * 1.5),
-  );
-  const takeProfit2 = roundProtectionPrice(
-    isLong ? entryReference * (1 + stopDistancePct * 2.5) : entryReference * (1 - stopDistancePct * 2.5),
-  );
+  const defaultTakeProfit = roundProtectionPrice(isLong ? entryReference * 1.02 : entryReference * 0.98);
 
   return {
     source: "system_default",
-    stopLoss,
-    takeProfits: [takeProfit1, takeProfit2].filter((value) => value !== null),
+    stopLoss: null,
+    takeProfits: defaultTakeProfit !== null ? [defaultTakeProfit] : [],
     entryReference: roundProtectionPrice(entryReference),
-    riskRewardTarget: "1:1.5/1:2.5",
+    riskRewardTarget: "100x_200pct_default_tp",
   };
 }
 

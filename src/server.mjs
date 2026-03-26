@@ -40,6 +40,18 @@ const telegramRuntime = {
   lastError: "",
 };
 const APP_BUILD = "analyst-general-signal-routing-v1";
+const safeConfiguredChatLabels = {
+  "-1003758464445": "Get8.Pro",
+  "-1003720685651": "Get8.Pro_News",
+  "-1003093807993": "舒琴",
+  "-1003358734784": "零下二度",
+  "-1002953601978": "易盈社区-所长",
+  "-1003435926001": "三马哥",
+  "-1003162264989": "洪七公",
+  "-1003300637347": "BTC乔乔",
+  "-1003044946193": "大漂亮策略早知道",
+  "-1003547241758": "熬鹰资本",
+};
 
 const cleanConfiguredChatLabels = {
   "-1003758464445": "Get8.Pro",
@@ -153,7 +165,10 @@ function getEffectiveTelegramConfig() {
 }
 
 function getConfiguredChatLabel(chatId) {
-  return coerceCleanChineseText(cleanConfiguredChatLabels[String(chatId || "")], "");
+  return (
+    safeConfiguredChatLabels[String(chatId || "")] ||
+    coerceCleanChineseText(cleanConfiguredChatLabels[String(chatId || "")], "")
+  );
 }
 
 function getAnalystRoute(chatId) {
@@ -243,7 +258,7 @@ function getGeneralAnalystSignalDeliveryOptions(signal) {
 
   const runtimeSettings = getRuntimeSettings();
   const webhookUrl = String(
-    runtimeSettings.feishu?.generalAnalystSignalWebhookUrl || "",
+    runtimeSettings.feishu?.generalAnalystSignalWebhookUrl || config.feishu.webhookUrl || "",
   ).trim();
   if (!webhookUrl) {
     return null;
@@ -1723,7 +1738,7 @@ const server = http.createServer(async (request, response) => {
         renderAdminPage({
           runtimeSettings: getRuntimeSettings(),
           knownChats: store.listKnownTelegramChats(),
-          configuredChatLabels: cleanConfiguredChatLabels,
+          configuredChatLabels: safeConfiguredChatLabels,
           signalCount: store.listSignals().length,
           dryRun: !["testnet", "spot_testnet", "futures_testnet"].includes(runtimeGateMode),
           autoExecutionEnabled: config.autoExecutionEnabled,

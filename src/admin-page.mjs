@@ -518,6 +518,53 @@ export function renderAdminPage({
     <script>
       const bootstrap = JSON.parse(document.getElementById("bootstrap").textContent);
       const discoveredIds = new Set(bootstrap.knownChats.map((chat) => String(chat.id)));
+
+      function looksBrokenChineseText(value) {
+        const text = String(value ?? "").trim();
+        if (!text) return false;
+        if (/^\\?{2,}$/.test(text)) return true;
+        if (text.includes("�")) return true;
+        return [
+          "鍒嗘瀽",
+          "涓夐┈",
+          "娲竷",
+          "鏄撶泩",
+          "闆朵笅",
+          "鑸掔惔",
+          "鐔拱",
+          "btc涔斾箶",
+          "澶ф紓浜",
+        ].some((token) => text.includes(token));
+      }
+
+      function getKnownChatMapFromBootstrap() {
+        const map = new Map();
+        for (const chat of bootstrap.knownChats) {
+          const id = String(chat.id);
+          map.set(id, {
+            ...chat,
+            title: bootstrap.configuredChatLabels?.[id] || chat.title || id,
+            isConfiguredOnly: false,
+          });
+        }
+        return map;
+      }
+
+      function buildDefaultRouteDisplayName(chatId) {
+        const id = String(chatId);
+        const knownChat = getKnownChatMapFromBootstrap().get(id);
+        const title = knownChat?.title || bootstrap.configuredChatLabels?.[id] || id;
+        return title ? title + "策略专线" : "分析师专线" + id.slice(-4);
+      }
+
+      function resolveRouteDisplayName(chatId, value) {
+        const text = String(value ?? "").trim();
+        if (!text || looksBrokenChineseText(text)) {
+          return buildDefaultRouteDisplayName(chatId);
+        }
+        return text;
+      }
+
       const state = {
         allowed: new Set((bootstrap.runtimeSettings.telegram.allowedChatIds || []).map(String)),
         news: new Set((bootstrap.runtimeSettings.telegram.newsChatIds || []).map(String)),
@@ -598,37 +645,6 @@ export function renderAdminPage({
           .replaceAll("<", "&lt;")
           .replaceAll(">", "&gt;")
           .replaceAll('"', "&quot;");
-      }
-
-      function looksBrokenChineseText(value) {
-        const text = String(value ?? "").trim();
-        if (!text) return false;
-        if (/^\\?{2,}$/.test(text)) return true;
-        if (text.includes("�")) return true;
-        return [
-          "鍒嗘瀽",
-          "涓夐┈",
-          "娲竷",
-          "鏄撶泩",
-          "闆朵笅",
-          "鑸掔惔",
-          "鐔拱",
-          "btc涔斾箶",
-          "澶ф紓浜",
-        ].some((token) => text.includes(token));
-      }
-
-      function buildDefaultRouteDisplayName(chatId) {
-        const title = getChatTitle(chatId);
-        return title ? title + "策略专线" : "分析师专线" + String(chatId).slice(-4);
-      }
-
-      function resolveRouteDisplayName(chatId, value) {
-        const text = String(value ?? "").trim();
-        if (!text || looksBrokenChineseText(text)) {
-          return buildDefaultRouteDisplayName(chatId);
-        }
-        return text;
       }
 
       function formatMetricNumber(value, digits = 2) {

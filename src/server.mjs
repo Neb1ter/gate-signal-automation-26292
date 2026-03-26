@@ -610,12 +610,16 @@ async function safeNotifyExecutionResult(signal, executionResult, deliveryOption
   }
 }
 
-let processingChain = Promise.resolve();
+const processingJobs = new Map();
 const analystThreadTimers = new Map();
-const ANALYST_THREAD_COLLECT_MS = 30 * 1000;
+const ANALYST_THREAD_COLLECT_MS = config.analystThreadCollectMs || 12 * 1000;
 
 function enqueueSignalProcessing(signalId) {
-  processingChain = processingChain
+  if (processingJobs.has(signalId)) {
+    return processingJobs.get(signalId);
+  }
+
+  const job = Promise.resolve()
     .then(() => finalizeSignalProcessing(signalId))
     .catch((error) => {
       const signal = store.getSignal(signalId);
@@ -626,8 +630,12 @@ function enqueueSignalProcessing(signalId) {
         store.upsertSignal(signal);
       }
       console.error(`[signal-processing] ${signalId} failed: ${error.message}`);
+    })
+    .finally(() => {
+      processingJobs.delete(signalId);
     });
-  return processingChain;
+  processingJobs.set(signalId, job);
+  return job;
 }
 
 function scheduleAnalystThreadProcessing(signal) {

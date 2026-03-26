@@ -90,6 +90,7 @@ export const config = {
   maxDailyTrades: parseInteger(process.env.MAX_DAILY_TRADES, 5),
   maxDailyNotionalUsd: parseInteger(process.env.MAX_DAILY_NOTIONAL_USD, 1000),
   dedupWindowSec: parseInteger(process.env.DEDUP_WINDOW_SEC, 1800),
+  analystThreadCollectMs: parseInteger(process.env.ANALYST_THREAD_COLLECT_MS, 12000),
   telegram: {
     sourceMode: telegramSourceMode,
     botToken: process.env.TELEGRAM_BOT_TOKEN || "",
@@ -122,6 +123,8 @@ export const config = {
     reviewModel: process.env.AI_REVIEW_MODEL || "deepseek-v3.2",
     reviewEnabled: parseBoolean(process.env.AI_REVIEW_SECOND_PASS_ENABLED, true),
     timeoutMs: parseInteger(process.env.AI_TIMEOUT_MS, 30000),
+    primaryTimeoutMs: parseInteger(process.env.AI_PRIMARY_TIMEOUT_MS, 12000),
+    reviewTimeoutMs: parseInteger(process.env.AI_REVIEW_TIMEOUT_MS, 8000),
   },
   gate: {
     apiKey: process.env.GATE_API_KEY || "",

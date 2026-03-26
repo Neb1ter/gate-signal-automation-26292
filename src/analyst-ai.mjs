@@ -229,6 +229,8 @@ export class AnalystAiReviewer {
     this.reviewModel = config.reviewModel || "";
     this.reviewEnabled = config.reviewEnabled !== false;
     this.timeoutMs = Number(config.timeoutMs || 30000);
+    this.primaryTimeoutMs = Number(config.primaryTimeoutMs || Math.min(this.timeoutMs, 12000));
+    this.reviewTimeoutMs = Number(config.reviewTimeoutMs || Math.min(this.timeoutMs, 8000));
   }
 
   isConfigured() {
@@ -266,9 +268,9 @@ export class AnalystAiReviewer {
     return parsed;
   }
 
-  async callModelWithTimeout(model, messages) {
+  async callModelWithTimeout(model, messages, timeoutMs = this.timeoutMs) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       return await this.callModel(model, messages, controller);
     } finally {
@@ -285,6 +287,7 @@ export class AnalystAiReviewer {
       const primaryRaw = await this.callModelWithTimeout(
         this.primaryModel,
         buildPrimaryMessages(signal),
+        this.primaryTimeoutMs,
       );
       const meta = {
         provider: this.provider,
@@ -301,6 +304,7 @@ export class AnalystAiReviewer {
         const reviewRaw = await this.callModelWithTimeout(
           this.reviewModel,
           buildReviewMessages(signal, primaryRaw),
+          this.reviewTimeoutMs,
         );
         const merged = mergeObjects(primaryRaw, reviewRaw);
         return normalizeResult(merged, meta);

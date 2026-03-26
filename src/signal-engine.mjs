@@ -1439,7 +1439,15 @@ function hasBlockingAiRiskFlags(analysis) {
 function isAnalystAiTradeCandidate(signal) {
   const analysis = signal?.analysis || {};
   const tradeIdea = signal?.tradeIdea || {};
-  if (String(analysis.messageType || "").toLowerCase() !== "strategy") {
+  const messageType = String(analysis.messageType || "").toLowerCase();
+  const executionIntent = String(analysis.executionIntent || "").toLowerCase();
+  const semanticTradeIntent = ["enter", "scale_in", "reduce", "exit", "hedge"].includes(
+    executionIntent,
+  );
+  if (!["strategy", "analysis"].includes(messageType)) {
+    return false;
+  }
+  if (messageType === "analysis" && !semanticTradeIntent) {
     return false;
   }
   if (!analysis.actionable) {

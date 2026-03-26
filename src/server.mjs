@@ -38,6 +38,7 @@ const telegramRuntime = {
   identity: "",
   lastError: "",
 };
+const APP_BUILD = "trail-price-type-v2";
 
 const configuredChatLabels = {
   "-1003758464445": "Get8.Pro",
@@ -1291,6 +1292,7 @@ const server = http.createServer(async (request, response) => {
       const runtimeGateMode = getRuntimeSettings().gate?.mode || "dry_run";
       json(response, 200, {
         ok: true,
+        build: APP_BUILD,
         host: config.host,
         publicBaseUrl: config.publicBaseUrl,
         dryRun: !["testnet", "spot_testnet", "futures_testnet"].includes(runtimeGateMode),

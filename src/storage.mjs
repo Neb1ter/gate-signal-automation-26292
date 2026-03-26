@@ -348,6 +348,20 @@ export class JsonStore {
     return this.state.signals.find((signal) => signal.id === id) || null;
   }
 
+  findLatestSignalByThread(threadId) {
+    const id = String(threadId || "").trim();
+    if (!id) {
+      return null;
+    }
+
+    return (
+      this.state.signals
+        .filter((signal) => String(signal.threadId || "") === id)
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0] ||
+      null
+    );
+  }
+
   findRecentDuplicate(hash, windowSec) {
     const cutoff = Date.now() - windowSec * 1000;
     return (

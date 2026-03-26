@@ -550,6 +550,8 @@ async function safeNotifyExecutionResult(signal, executionResult, deliveryOption
 }
 
 let processingChain = Promise.resolve();
+const analystThreadTimers = new Map();
+const ANALYST_THREAD_COLLECT_MS = 30 * 1000;
 
 function enqueueSignalProcessing(signalId) {
   processingChain = processingChain
@@ -567,10 +569,46 @@ function enqueueSignalProcessing(signalId) {
   return processingChain;
 }
 
+function scheduleAnalystThreadProcessing(signal) {
+  const threadId = String(signal?.threadId || "");
+  if (!threadId) {
+    return enqueueSignalProcessing(signal.id);
+  }
+
+  const existingTimer = analystThreadTimers.get(threadId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  const timer = setTimeout(() => {
+    analystThreadTimers.delete(threadId);
+    const latest = store.findLatestSignalByThread(threadId);
+    if (latest?.id) {
+      void enqueueSignalProcessing(latest.id);
+    }
+  }, ANALYST_THREAD_COLLECT_MS);
+
+  analystThreadTimers.set(threadId, timer);
+  return timer;
+}
+
 async function finalizeSignalProcessing(signalId) {
   const signal = store.getSignal(signalId);
   if (!signal) {
     return null;
+  }
+
+  if (signal.sourceType === "analyst" && signal.threadId) {
+    const latestInThread = store.findLatestSignalByThread(signal.threadId);
+    if (latestInThread && latestInThread.id !== signal.id) {
+      signal.processingState = "superseded";
+      signal.processingError = "";
+      signal.processingUpdatedAt = new Date().toISOString();
+      signal.executionStatus = signal.executionStatus || "notify_only";
+      signal.executionReason = "同一策略线程里已有更新消息，当前这条已由更新版本接管";
+      store.upsertSignal(signal);
+      return signal;
+    }
   }
 
   signal.processingState = "processing";
@@ -704,11 +742,21 @@ async function processBaseSignal(baseSignal) {
   }
 
   const { signal } = evaluation;
-  signal.processingState = "queued";
+  if (signal.sourceType === "analyst" && signal.threadId) {
+    signal.processingState = "collecting";
+    signal.executionReason =
+      signal.executionReason || `正在等待同一策略线程补充消息（约 ${Math.round(ANALYST_THREAD_COLLECT_MS / 1000)} 秒）`;
+  } else {
+    signal.processingState = "queued";
+  }
   signal.processingError = "";
   signal.processingUpdatedAt = new Date().toISOString();
   store.upsertSignal(signal);
-  void enqueueSignalProcessing(signal.id);
+  if (signal.sourceType === "analyst" && signal.threadId) {
+    scheduleAnalystThreadProcessing(signal);
+  } else {
+    void enqueueSignalProcessing(signal.id);
+  }
   return { skipped: false, queued: true, signal };
 }
 

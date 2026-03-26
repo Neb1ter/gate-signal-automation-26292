@@ -14,6 +14,7 @@ import {
   createSignalFromPayload,
   createSignalFromTelegramMessage,
   evaluateSignal,
+  reconcileAnalystSignalWithAi,
 } from "./signal-engine.mjs";
 import { JsonStore } from "./storage.mjs";
 import { createTelegramSource } from "./telegram.mjs";
@@ -584,6 +585,7 @@ async function finalizeSignalProcessing(signalId) {
       applyAiAnalysis(signal, aiAnalysis);
       signal.aiCompletedAt = new Date().toISOString();
     }
+    reconcileAnalystSignalWithAi(signal, runtimeSettings, config, store);
   }
 
   const deliveryOptions = getSignalDeliveryOptions(signal);

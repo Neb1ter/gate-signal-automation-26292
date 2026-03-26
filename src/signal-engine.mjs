@@ -515,6 +515,8 @@ function buildStructuredSummary(analysis) {
   }
 
   const lines = [
+    `语义判断：${analysis.semanticSummary || "未提取"}`,
+    `执行意图：${analysis.executionIntent || "未提取"}`,
     `文案类型：${
       analysis.messageType === "strategy"
         ? "交易策略"
@@ -1268,6 +1270,8 @@ export function applyAiAnalysis(signal, aiAnalysis) {
     provider: aiAnalysis.provider || signal.analysis.provider,
     primaryModel: aiAnalysis.primaryModel || signal.analysis.primaryModel,
     reviewModel: aiAnalysis.reviewModel || signal.analysis.reviewModel,
+    semanticSummary: aiAnalysis.semanticSummary || signal.analysis.semanticSummary || "",
+    executionIntent: aiAnalysis.executionIntent || signal.analysis.executionIntent || "",
     messageType: aiAnalysis.messageType || signal.analysis.messageType,
     asset: aiAnalysis.asset || signal.analysis.asset,
     symbol: aiAnalysis.symbol || signal.analysis.symbol,
@@ -1336,6 +1340,115 @@ export function applyAiAnalysis(signal, aiAnalysis) {
       : "AI 已补充结构化摘要，但仍未形成可执行下单参数";
   }
 
+  return signal;
+}
+
+function hasBlockingAiRiskFlags(analysis) {
+  const flags = (analysis?.riskFlags || []).map((item) => String(item || "").toLowerCase());
+  return flags.some((flag) =>
+    [
+      "ambiguous",
+      "unclear",
+      "uncertain",
+      "missing symbol",
+      "missing direction",
+      "review failed",
+      "fallback",
+    ].some((keyword) => flag.includes(keyword)),
+  );
+}
+
+function isAnalystAiTradeCandidate(signal) {
+  const analysis = signal?.analysis || {};
+  const tradeIdea = signal?.tradeIdea || {};
+  if (String(analysis.messageType || "").toLowerCase() !== "strategy") {
+    return false;
+  }
+  if (!analysis.actionable) {
+    return false;
+  }
+  if (!["buy", "sell"].includes(String(analysis.direction || "").toLowerCase())) {
+    return false;
+  }
+  if (!String(tradeIdea.symbol || "").trim()) {
+    return false;
+  }
+  if (hasBlockingAiRiskFlags(analysis)) {
+    return false;
+  }
+  return true;
+}
+
+export function reconcileAnalystSignalWithAi(signal, runtimeSettings, config, store) {
+  if (!signal || signal.sourceType !== "analyst") {
+    return signal;
+  }
+
+  const analystConfig =
+    runtimeSettings?.analysts?.configs?.find(
+      (item) => String(item.chatId || "") === String(signal.chatId || ""),
+    ) || null;
+  const allowedSymbols = Array.isArray(analystConfig?.allowedSymbols)
+    ? analystConfig.allowedSymbols
+    : [];
+  const symbolAllowed =
+    !signal.tradeIdea?.symbol ||
+    !allowedSymbols.length ||
+    allowedSymbols.includes(String(signal.tradeIdea.symbol || "").split("_")[0]?.toUpperCase());
+
+  if (analystConfig?.enabled === false) {
+    signal.tradeIdea = null;
+    signal.executionStatus = "notify_only";
+    signal.executionReason = "该分析师当前已关闭自动跟单，只保留消息转发。";
+    return signal;
+  }
+
+  if (signal.tradeIdea && !symbolAllowed) {
+    signal.tradeIdea = null;
+    signal.executionStatus = "notify_only";
+    signal.executionReason = "该分析师当前只允许白名单币种，已转为提醒。";
+    return signal;
+  }
+
+  if (!signal.tradeIdea) {
+    signal.executionStatus = "notify_only";
+    signal.executionReason =
+      signal.analysis?.semanticSummary
+        ? `AI 语义判断：${signal.analysis.semanticSummary}`
+        : "AI 已完成语义分析，但没有形成可执行交易建议。";
+    return signal;
+  }
+
+  const aiTradeCandidate = isAnalystAiTradeCandidate(signal);
+  const aiAutomationReady = signal.analysis?.automationReady === true;
+  const notionalEstimate =
+    Number.parseFloat(signal.tradeIdea.marginQuote || signal.tradeIdea.amountQuote || "") ||
+    Number.parseFloat(signal.tradeIdea.amountBase || "") ||
+    0;
+  const risk = getDailyRiskSnapshot(store);
+  const dailyTradeLimitReached = risk.count >= config.maxDailyTrades;
+  const dailyNotionalLimitReached = risk.notional + notionalEstimate > config.maxDailyNotionalUsd;
+
+  if (dailyTradeLimitReached || dailyNotionalLimitReached) {
+    signal.executionStatus = "blocked_risk";
+    signal.executionReason = dailyTradeLimitReached ? "已达到当日交易次数上限。" : "已达到当日交易金额上限。";
+    return signal;
+  }
+
+  if (aiTradeCandidate && aiAutomationReady && config.autoExecutionEnabled) {
+    signal.executionStatus = "ready_for_execution";
+    signal.executionReason =
+      signal.analysis?.automationComment ||
+      "AI 已完成语义分析，并判断这是一条可自动执行的策略。";
+    return signal;
+  }
+
+  signal.executionStatus = "pending_approval";
+  signal.executionReason =
+    signal.analysis?.automationComment ||
+    (aiTradeCandidate
+      ? "AI 已完成语义分析并生成交易建议，等待你确认是否跟单。"
+      : "AI 已完成语义分析，但这条内容更适合人工确认。");
   return signal;
 }
 

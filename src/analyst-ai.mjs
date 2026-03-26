@@ -100,6 +100,8 @@ function normalizeResult(parsed = {}, meta = {}) {
     provider: meta.provider || "dashscope",
     primaryModel: meta.primaryModel || "",
     reviewModel: meta.reviewEnabled ? meta.reviewModel || "" : "",
+    semanticSummary: String(parsed.semanticSummary || parsed.intentSummary || ""),
+    executionIntent: String(parsed.executionIntent || ""),
     messageType: String(parsed.messageType || ""),
     asset: String(parsed.asset || "").toUpperCase(),
     symbol: String(parsed.symbol || "").replace("/", "_").toUpperCase(),
@@ -131,13 +133,15 @@ function buildPrimaryMessages(signal) {
     {
       role: "system",
       content:
-        "You are a trading-signal structuring assistant. Convert the analyst text into strict JSON only. Do not add explanations. Do not invent missing facts. messageType must be one of strategy, analysis, watchlist, brief. direction must be buy, sell, or an empty string. orderType must be market, limit, or an empty string.",
+        "You are a trading-signal semantic analysis assistant. First understand what the analyst actually means, then convert that meaning into strict JSON only. Do not add explanations. Do not invent missing facts. messageType must be one of strategy, analysis, watchlist, brief. direction must be buy, sell, or an empty string. orderType must be market, limit, or an empty string. semanticSummary should be a short Chinese summary of the real intent. executionIntent should be one of enter, scale_in, reduce, exit, wait, hedge, unclear.",
     },
     {
       role: "user",
       content: JSON.stringify({
-        task: "Extract structured trading fields from the analyst text.",
+        task: "Understand the analyst message semantically and extract structured trading fields from the text.",
         expectedFields: [
+          "semanticSummary",
+          "executionIntent",
           "messageType",
           "asset",
           "symbol",
@@ -170,13 +174,15 @@ function buildReviewMessages(signal, extracted) {
     {
       role: "system",
       content:
-        "You are a trading-risk review assistant. Re-check the extracted result against the original analyst text and return strict JSON only. Focus on whether the fields are reasonable, whether the signal is automation-ready, and whether there is ambiguity or risk. automationReady should be true only when the asset, direction, and execution intent are all sufficiently clear.",
+        "You are a trading-risk review assistant. Re-check the extracted result against the original analyst text and return strict JSON only. Focus on whether the semantic meaning was understood correctly, whether the fields are reasonable, whether the signal is automation-ready, and whether there is ambiguity or risk. automationReady should be true only when the asset, direction, and execution intent are all sufficiently clear.",
     },
     {
       role: "user",
       content: JSON.stringify({
         task: "Review and correct the structured analyst output.",
         expectedFields: [
+          "semanticSummary",
+          "executionIntent",
           "messageType",
           "asset",
           "symbol",

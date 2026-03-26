@@ -514,12 +514,19 @@ export class GateSpotClient {
       throw new Error("Gate API Key / Secret 尚未配置，暂时无法提交追踪止盈单");
     }
 
-    return this.request(
+    const payload = await this.request(
       "POST",
       `/futures/${encodeURIComponent(settle)}/autoorder/v1/trail/create`,
       "",
       body,
     );
+
+    const numericCode = Number.parseInt(String(payload?.code ?? ""), 10);
+    if (Number.isFinite(numericCode) && numericCode < 0) {
+      throw new Error(`Gate trail order rejected: ${payload?.message || payload?.code}`);
+    }
+
+    return payload;
   }
 
   async placeFuturesProtectionOrders(action) {

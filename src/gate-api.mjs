@@ -487,7 +487,7 @@ export class GateSpotClient {
     const normalizedActivationPrice = trimAmount(activationPrice);
     const activationNumeric = Number.parseFloat(normalizedActivationPrice || "");
     const callbackOffset = Number.isFinite(activationNumeric) && activationNumeric > 0
-      ? trimAmount(activationNumeric * callbackRate)
+      ? trimInteger(Math.max(1, Math.round(activationNumeric * callbackRate)))
       : "";
     if (!contract || !normalizedAmount || !normalizedActivationPrice || !callbackOffset) {
       return null;

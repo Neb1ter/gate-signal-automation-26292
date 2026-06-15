@@ -183,6 +183,8 @@ export const config = {
       {
         authorName: "零下二度",
         kolChannelId: "1418888601340481607",
+        kolMessageType: "analysis",
+        latestOnly: true,
         feishuWebhookUrl: process.env.KOL_LINGXIAERDU_FEISHU_WEBHOOK_URL || "",
         feishuSignSecret: process.env.KOL_LINGXIAERDU_FEISHU_SIGN_SECRET || "",
         feishuChatId: envOrDefault("KOL_LINGXIAERDU_FEISHU_CHAT_ID", FEISHU_CHAT_ID_DEFAULTS.KOL_LINGXIAERDU_FEISHU_CHAT_ID),

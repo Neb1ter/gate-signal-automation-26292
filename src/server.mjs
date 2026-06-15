@@ -1098,6 +1098,8 @@ const server = http.createServer(async (request, response) => {
                 ? "webhook"
                 : "missing",
             discord: Boolean(r.discordWebhookUrl),
+            kolMessageType: r.kolMessageType || "all",
+            latestOnly: Boolean(r.latestOnly),
           })),
           stats: kolScraper.getStats(),
         },

@@ -946,13 +946,21 @@ async function postToFeishu(webhookUrl, card, signSecret = "") {
  * Fetch latest raw messages for a KOL channel from kol.lysq.cc frontend API.
  * Returns messages with text + attachments (images).
  */
-async function fetchChannelMessages(kolChannelId, limit = 5) {
+async function fetchChannelMessages(routeOrKolChannelId, limit = 5) {
+  const kolChannelId =
+    typeof routeOrKolChannelId === "object"
+      ? routeOrKolChannelId?.kolChannelId
+      : routeOrKolChannelId;
+  const messageType =
+    typeof routeOrKolChannelId === "object"
+      ? routeOrKolChannelId?.kolMessageType || "all"
+      : "all";
   if (!kolChannelId) return [];
   try {
     const token = await loginKol();
     if (!token) return [];
     const resp = await proxyFetch(
-      `${API_BASE}/frontend-messages?limit=${limit}&offset=0&type=all&channel_id=${kolChannelId}`,
+      `${API_BASE}/frontend-messages?limit=${limit}&offset=0&type=${encodeURIComponent(messageType)}&channel_id=${kolChannelId}`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     if (!resp.ok) return [];
@@ -1276,13 +1284,16 @@ export class KolScraper {
       for (const route of this.activeRoutes) {
         if (!route.kolChannelId) continue;
         try {
-          const msgs = await fetchChannelMessages(route.kolChannelId, 5);
+          const msgs = await fetchChannelMessages(route, 5);
           this.stats.pollFetched += msgs.length;
           const lastSeenKey = `last_${route.kolChannelId}`;
           const lastSeen = this._lastSeen.get(lastSeenKey) || "";
-          const newMessages = msgs
+          let newMessages = msgs
             .filter((msg) => isNewerMessageId(msg.message_id, lastSeen))
             .sort((a, b) => compareMessageIds(a.message_id, b.message_id));
+          if (route.latestOnly && newMessages.length > 1) {
+            newMessages = newMessages.slice(-1);
+          }
 
           for (const msg of newMessages) {
             const msgId = msg.message_id;
@@ -1474,7 +1485,7 @@ export class KolScraper {
       };
 
       try {
-        const messages = await fetchChannelMessages(route.kolChannelId, limit);
+        const messages = await fetchChannelMessages(route, limit);
         if (!messages.length) {
           entry.error = "no messages returned from kol.lysq.cc";
           results.push(entry);
